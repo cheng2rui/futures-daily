@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -8,7 +9,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Contract, DailyBar, WatchSymbol
+from app.models import Contract, DailyBar, JobRun, WatchSymbol
 from app.services.collector import collect_daily_market
 from app.services.structure import sector_for
 from app.services.trading_day import normalize_trade_date
@@ -105,6 +106,33 @@ def _sector_summary(rows: list[dict]) -> list[dict]:
     return sorted(result, key=lambda x: abs(float(x.get("avg_change") or 0)), reverse=True)
 
 
+@router.post("/intraday/refresh")
+def refresh_intraday_snapshot(trade_date: str | None = None, db: Session = Depends(get_db)):
+    selected_date = normalize_trade_date(trade_date)
+    job = JobRun(name="refresh_intraday", status="running", trade_date=selected_date, started_at=datetime.utcnow(), message="manual intraday refresh")
+    db.add(job)
+    db.commit()
+    try:
+        collect_result = collect_daily_market(db, selected_date)
+        payload = _build_intraday_snapshot(db, selected_date, collect_result)
+        total_saved = sum(int(x.get("saved") or 0) for x in collect_result.get("results", [])) if collect_result else 0
+        failed = [x for x in collect_result.get("results", []) if x.get("error")] if collect_result else []
+        job.status = "partial" if failed and total_saved else "failed" if failed else "success"
+        job.message = f"盘中快照刷新完成，保存 {total_saved} 行" + (f"，异常 {len(failed)} 个" if failed else "")
+        job.result_json = json.dumps({"collect": collect_result, "snapshot": {"market": payload.get("market"), "updated_at": payload.get("updated_at")}}, ensure_ascii=False, default=str)
+        job.finished_at = datetime.utcnow()
+        db.commit()
+        payload["job_id"] = job.id
+        payload["job_status"] = job.status
+        return payload
+    except Exception as exc:
+        job.status = "failed"
+        job.message = f"{type(exc).__name__}: {exc}"
+        job.finished_at = datetime.utcnow()
+        db.commit()
+        raise
+
+
 @router.get("/intraday")
 def intraday_snapshot(trade_date: str | None = None, refresh: bool = False, db: Session = Depends(get_db)):
     """Stage-based intraday snapshot built from the latest collected daily bars.
@@ -113,11 +141,13 @@ def intraday_snapshot(trade_date: str | None = None, refresh: bool = False, db: 
     triggers the existing market collector and then summarizes the latest saved
     rows for dashboard use.
     """
-    selected_date = normalize_trade_date(trade_date) if trade_date else _latest_trade_date(db)
-    collect_result = None
     if refresh:
-        selected_date = normalize_trade_date(trade_date)
-        collect_result = collect_daily_market(db, selected_date)
+        return refresh_intraday_snapshot(trade_date, db)
+    selected_date = normalize_trade_date(trade_date) if trade_date else _latest_trade_date(db)
+    return _build_intraday_snapshot(db, selected_date)
+
+
+def _build_intraday_snapshot(db: Session, selected_date: str | None, collect_result: dict | None = None) -> dict:
     if not selected_date:
         return _empty_intraday(collect_result)
 

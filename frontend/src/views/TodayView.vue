@@ -499,8 +499,12 @@ async function load() { loading.value = true; error.value = ''; try { const url 
 async function loadIntraday(refresh = false) {
   intradayLoading.value = true
   try {
-    const { data } = await api.get('/markets/intraday', { params: { refresh, trade_date: viewingDate.value || undefined } })
+    const params = { trade_date: viewingDate.value || undefined }
+    const { data } = refresh
+      ? await api.post('/markets/intraday/refresh', null, { params })
+      : await api.get('/markets/intraday', { params })
     intraday.value = data || emptyIntraday()
+    if (refresh && data?.job_id) notice.value = `盘中快照已刷新，任务 #${data.job_id}。`
   } catch (err) {
     if (activeDashboardMode.value === 'intraday') error.value = '盘中快照加载失败，请稍后重试。'
   } finally {
