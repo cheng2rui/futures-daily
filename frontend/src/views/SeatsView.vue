@@ -65,7 +65,7 @@ import { computed, onMounted, ref } from 'vue'
 import api from '../api.js'
 import SectionCard from '../components/SectionCard.vue'
 import SimpleTable from '../components/SimpleTable.vue'
-import { exchangeName, exchangeOptions } from '../exchange.js'
+import { contractName, exchangeName, exchangeOptions } from '../exchange.js'
 
 const loading = ref(false)
 const report = ref({ seats: {} })
@@ -82,14 +82,14 @@ const exchangeItems = exchangeOptions(['DCE', 'CZCE', 'SHFE', 'CFFEX', 'GFEX', '
 const archive = computed(() => report.value.seats?.archive || {})
 const longRows = computed(() => (report.value.seats?.long_increase_top || []).map(row))
 const shortRows = computed(() => (report.value.seats?.short_increase_top || []).map(row))
-const watchRows = computed(() => (report.value.seats?.watchlist || []).map(x => [exchangeName(x.exchange), x.variety, x.contract, x.long_party_name || '-', x.long_open_interest_chg ?? '-', x.short_party_name || '-', x.short_open_interest_chg ?? '-']))
+const watchRows = computed(() => (report.value.seats?.watchlist || []).map(x => [exchangeName(x.exchange), x.variety, contractName(x.contract, x.variety), x.long_party_name || '-', x.long_open_interest_chg ?? '-', x.short_party_name || '-', x.short_open_interest_chg ?? '-']))
 const detailRows = computed(() => details.value.map(x => [x.trade_date, exchangeName(x.exchange), x.variety, x.rank, x.long_party_name || '-', x.long_open_interest_chg ?? '-', x.short_party_name || '-', x.short_open_interest_chg ?? '-']))
 const trendRows = computed(() => (archiveHistory.value.trend || []).map(x => [formatDate(x.date), x.seat, x.variety, exchangeName(x.exchange), fmtSigned(x.netDelta), fmtSigned(x.netVol)]))
 const netLongRows = computed(() => (archive.value.long_bias || []).slice(0, 8).map(archiveRow))
 const netShortRows = computed(() => (archive.value.short_bias || []).slice(0, 8).map(archiveRow))
 const hasAnySeatData = computed(() => longRows.value.length || shortRows.value.length || watchRows.value.length || detailRows.value.length || trendRows.value.length)
 
-function row(x) { return [exchangeName(x.exchange), x.variety, x.contract, x.seat, x.value ?? '-', x.change ?? '-'] }
+function row(x) { return [exchangeName(x.exchange), x.variety, contractName(x.contract, x.variety), x.seat, x.value ?? '-', x.change ?? '-'] }
 function archiveRow(x) { return [x.displayName || x.name, exchangeName(x.exchange), x.longShortRatio ?? '-', fmtSigned(x.netDelta), x.netDir || '-', `${x.longCR5 ?? '-'}%`, `${x.shortCR5 ?? '-'}%`] }
 function fmtSigned(v) { if (v == null) return '-'; const n = Number(v); if (!Number.isFinite(n)) return v; return n > 0 ? `+${n}` : String(n) }
 function formatDate(v) { const s = String(v || ''); return /^\d{8}$/.test(s) ? `${s.slice(4, 6)}-${s.slice(6)}` : s }

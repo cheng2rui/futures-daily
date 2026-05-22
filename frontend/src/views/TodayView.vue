@@ -96,7 +96,7 @@ import api from '../api.js'
 import BaseChart from '../components/BaseChart.vue'
 import SectionCard from '../components/SectionCard.vue'
 import SimpleTable from '../components/SimpleTable.vue'
-import { exchangeName } from '../exchange.js'
+import { contractName, exchangeName } from '../exchange.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -136,7 +136,7 @@ const longSeatOption = computed(() => horizontalBarOption((report.value.seats?.l
 const shortSeatOption = computed(() => horizontalBarOption((report.value.seats?.short_increase_top || []).slice(0, 10).map(x => ({ name: `${x.variety} ${x.seat}`, value: Number(x.change || 0) })), '#e94560'))
 
 function emptyReport() { return { overview: {}, market: {}, meta: {}, sectors: [], rankings: {}, data_quality: {}, watch_symbols: [], risk_flags: [] } }
-function rows(items = []) { return (items || []).map(x => [exchangeName(x.exchange), x.symbol, x.contract, x.sector, x.close ?? '-', x.change_pct == null ? '-' : signedPct(x.change_pct)]) }
+function rows(items = []) { return (items || []).map(x => [exchangeName(x.exchange), x.symbol, contractName(x.contract, x.symbol), x.sector, x.close ?? '-', x.change_pct == null ? '-' : signedPct(x.change_pct)]) }
 function signedPct(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}%` : `${v}%` }
 function fmtSigned(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}` : `${v}` }
 function fmtNum(value) { if (value == null) return '-'; const n = Number(value); if (!Number.isFinite(n)) return value; if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(2)}亿`; if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`; return n.toFixed(0) }

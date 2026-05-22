@@ -39,7 +39,7 @@ import api from '../api.js'
 import KpiCard from '../components/KpiCard.vue'
 import SectionCard from '../components/SectionCard.vue'
 import SimpleTable from '../components/SimpleTable.vue'
-import { exchangeName } from '../exchange.js'
+import { contractName, exchangeName } from '../exchange.js'
 
 const route = useRoute()
 const bars = ref([])
@@ -51,7 +51,7 @@ const columns = ['日期', '交易所', '合约', '开盘', '最高', '最低', 
 const rows = computed(() => bars.value.map(x => [
   x.trade_date,
   exchangeName(x.exchange),
-  x.contract,
+  contractName(x.contract, x.symbol),
   fmt(x.open),
   fmt(x.high),
   fmt(x.low),

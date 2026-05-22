@@ -59,7 +59,7 @@ import api from '../api.js'
 import KpiCard from '../components/KpiCard.vue'
 import SectionCard from '../components/SectionCard.vue'
 import SimpleTable from '../components/SimpleTable.vue'
-import { exchangeName } from '../exchange.js'
+import { contractName, exchangeName } from '../exchange.js'
 
 const loading = ref(false)
 const data = ref({ rows: [], summary: {} })
@@ -80,7 +80,7 @@ const varietyRows = computed(() => filteredRows.value.map(x => [
   exchangeName(x.exchange),
   x.symbol,
   x.name,
-  x.main_contract,
+  contractName(x.main_contract, x.symbol),
   x.main_change_pct == null ? '-' : `${x.main_change_pct}%`,
   fmtNum(x.total_volume),
   fmtNum(x.total_open_interest),
