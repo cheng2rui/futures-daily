@@ -8,7 +8,7 @@
       </div>
       <div class="actions">
         <router-link v-if="viewingDate" to="/" class="secondary">查看最新</router-link>
-        <button class="primary" :disabled="loading" @click="generate">{{ loading ? '生成中...' : '生成日报' }}</button>
+        <button class="primary" :disabled="loading" @click="generate">{{ generateButtonText }}</button>
       </div>
     </div>
 
@@ -95,7 +95,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import api from '../api.js'
 import BaseChart from '../components/BaseChart.vue'
 import SectionCard from '../components/SectionCard.vue'
@@ -104,7 +104,6 @@ import { contractName, exchangeName } from '../exchange.js'
 import { statusLabel } from '../labels.js'
 
 const route = useRoute()
-const router = useRouter()
 const loading = ref(false)
 const error = ref('')
 const report = ref(emptyReport())
@@ -112,6 +111,10 @@ const rankColumns = ['交易所', '品种', '合约', '板块', '收盘', '涨�
 const viewingDate = computed(() => route.query.date ? String(route.query.date) : '')
 const displayDate = computed(() => formatDate(report.value.date || viewingDate.value) || '暂无日期')
 const isEmptyReport = computed(() => !report.value.date && !report.value.overview?.summary)
+const generateButtonText = computed(() => {
+  if (loading.value) return viewingDate.value ? '抓取中...' : '生成中...'
+  return viewingDate.value ? '抓取信息并重建' : '生成日报'
+})
 
 const watchRows = computed(() => rows(report.value.watch_symbols).slice(0, 14))
 const breadthRows = computed(() => (report.value.structure?.sector_breadth || []).map(x => [x.name, x.count, x.up, x.down, `${x.up_ratio}%`, fmtNum(x.volume), fmtNum(x.open_interest)]))
@@ -155,7 +158,7 @@ function horizontalBarOption(items, color) { const rows = [...items].filter(x =>
 function formatDate(value) { if (!value) return ''; const text = String(value); if (/^\d{8}$/.test(text)) return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6)}`; return text }
 
 async function load() { loading.value = true; error.value = ''; try { const url = viewingDate.value ? `/reports/${viewingDate.value}` : '/reports/latest'; const { data } = await api.get(url); report.value = data || emptyReport() } catch (err) { report.value = emptyReport(); error.value = viewingDate.value ? `未找到 ${formatDate(viewingDate.value)} 的日报。` : '日报加载失败，请稍后重试。' } finally { loading.value = false } }
-async function generate() { loading.value = true; error.value = ''; try { await api.post('/reports/generate', null, { params: viewingDate.value ? { trade_date: viewingDate.value } : {} }); if (viewingDate.value) await router.replace('/'); await load() } finally { loading.value = false } }
+async function generate() { loading.value = true; error.value = ''; try { await api.post('/reports/generate', null, { params: viewingDate.value ? { trade_date: viewingDate.value, collect: true } : {} }); await load() } finally { loading.value = false } }
 onMounted(load)
 watch(() => route.query.date, load)
 </script>
