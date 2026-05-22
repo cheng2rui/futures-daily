@@ -33,7 +33,8 @@ def notional_value(bar: DailyBar) -> float | None:
 
 def build_report(db: Session, trade_date: str) -> Report:
     bars = list(db.scalars(select(DailyBar).where(DailyBar.trade_date == trade_date)))
-    changes = [(bar, pct_change(bar)) for bar in bars]
+    main_bars = pick_main_bars(bars)
+    changes = [(bar, pct_change(bar)) for bar in main_bars]
     valid = [(bar, chg) for bar, chg in changes if chg is not None]
     liquid_valid = [(bar, chg) for bar, chg in valid if is_liquid_bar(bar)]
     ranking_valid = liquid_valid or valid
@@ -137,7 +138,7 @@ def build_report(db: Session, trade_date: str) -> Report:
             "risk": risk,
             "summary": report_sections[0]["body"],
         },
-        "market": {"up_count": up_count, "down_count": down_count, "turnover": turnover, "volume": volume, "contracts": len(bars), "liquid_contracts": len(ranking_valid)},
+        "market": {"up_count": up_count, "down_count": down_count, "turnover": turnover, "volume": volume, "contracts": len(bars), "main_contracts": len(main_bars), "liquid_contracts": len(ranking_valid)},
         "sectors": sectors,
         "rankings": {
             "gainers": [bar_item(b, c) for b, c in gainers],
@@ -183,6 +184,17 @@ def build_report(db: Session, trade_date: str) -> Report:
     return report
 
 
+def pick_main_bars(bars: list[DailyBar]) -> list[DailyBar]:
+    grouped: dict[tuple[str, str], list[DailyBar]] = defaultdict(list)
+    for bar in bars:
+        grouped[(get_exchange_code(bar.symbol, bar.exchange), bar.symbol.upper())].append(bar)
+    return [
+        sorted(items, key=lambda x: ((x.volume or 0) * 0.65 + (x.open_interest or 0) * 0.35), reverse=True)[0]
+        for items in grouped.values()
+        if items
+    ]
+
+
 def is_liquid_bar(bar: DailyBar) -> bool:
     return (bar.volume or 0) >= LIQUID_MIN_VOLUME and (bar.open_interest or 0) >= LIQUID_MIN_OPEN_INTEREST
 
@@ -217,7 +229,7 @@ def build_report_sections(
         {
             "title": "市场结论",
             "tone": "neutral" if stage == "分化" else "positive" if stage == "偏强" else "negative",
-            "body": f"当前市场状态为{stage}，综合分 {score}。流动性过滤后的合约中，上涨 {up_count} 个、下跌 {down_count} 个；活跃度主要集中在 {active_text}。",
+            "body": f"当前市场状态为{stage}，综合分 {score}。主力合约流动性过滤后，上涨 {up_count} 个、下跌 {down_count} 个；活跃度主要集中在 {active_text}。",
         },
         {
             "title": "主线机会",

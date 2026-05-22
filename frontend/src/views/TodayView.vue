@@ -17,7 +17,7 @@
 
     <div class="metric-grid">
       <div class="metric-card accent-red"><div class="metric-label">综合温度</div><div class="metric-main">{{ report.overview?.score ?? 0 }}</div><div class="metric-sub">{{ report.overview?.heat || '暂无热度' }}</div></div>
-      <div class="metric-card accent-green"><div class="metric-label">上涨 / 下跌</div><div class="metric-main">{{ report.market?.up_count ?? 0 }} / {{ report.market?.down_count ?? 0 }}</div><div class="metric-sub">流动性过滤 {{ report.market?.liquid_contracts ?? report.market?.contracts ?? 0 }} 合约</div></div>
+      <div class="metric-card accent-green"><div class="metric-label">上涨 / 下跌</div><div class="metric-main">{{ report.market?.up_count ?? 0 }} / {{ report.market?.down_count ?? 0 }}</div><div class="metric-sub">主力合约 {{ report.market?.main_contracts ?? report.market?.liquid_contracts ?? report.market?.contracts ?? 0 }} 个</div></div>
       <div class="metric-card accent-blue"><div class="metric-label">成交量</div><div class="metric-main">{{ fmtNum(report.market?.volume) }}</div><div class="metric-sub">总成交</div></div>
       <div class="metric-card accent-orange"><div class="metric-label">数据覆盖</div><div class="metric-main">{{ report.data_quality?.coverage_pct ?? 0 }}%</div><div class="metric-sub">{{ qualityOkText }}</div></div>
     </div>
