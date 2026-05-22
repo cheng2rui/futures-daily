@@ -18,7 +18,7 @@
       </nav>
       <div class="side-foot">
         <span class="status-dot"></span>
-        <span>Local · Docker</span>
+        <span>Local · Docker · v{{ appVersion }}</span>
       </div>
     </aside>
     <main class="content">
@@ -26,6 +26,19 @@
     </main>
   </div>
 </template>
+
+<script setup>
+import { onMounted, ref } from 'vue'
+import api from './api.js'
+
+const appVersion = ref('0.1.2')
+onMounted(async () => {
+  try {
+    const { data } = await api.get('/health')
+    appVersion.value = data?.version || appVersion.value
+  } catch {}
+})
+</script>
 
 <style scoped>
 .app-shell { display:flex; min-height:100vh; background:#eef2f7; }

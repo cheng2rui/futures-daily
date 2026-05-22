@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 from pathlib import Path
+import logging
+import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import assistant, dataset, jobs, markets, quality, reports, seat_archive, seats, settings, watch
 from app.db import init_db
+from app.logging_config import setup_logging
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 from app.version import VERSION
+
+setup_logging()
+logger = logging.getLogger("futures_daily")
 
 app = FastAPI(title="Futures Daily", version=VERSION)
 app.add_middleware(
@@ -21,6 +27,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def request_logging(request: Request, call_next):
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:  # noqa: BLE001
+        duration_ms = round((time.perf_counter() - start) * 1000, 2)
+        logger.exception("request failed method=%s path=%s duration_ms=%s", request.method, request.url.path, duration_ms)
+        raise
+    duration_ms = round((time.perf_counter() - start) * 1000, 2)
+    if request.url.path.startswith("/api"):
+        logger.info("request method=%s path=%s status=%s duration_ms=%s", request.method, request.url.path, response.status_code, duration_ms)
+    return response
+
 
 app.include_router(assistant.router)
 app.include_router(dataset.router)
@@ -36,12 +57,14 @@ app.include_router(watch.router)
 
 @app.on_event("startup")
 def on_startup() -> None:
+    logger.info("futures-daily starting version=%s", VERSION)
     init_db()
     start_scheduler()
 
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
+    logger.info("futures-daily stopping version=%s", VERSION)
     stop_scheduler()
 
 
