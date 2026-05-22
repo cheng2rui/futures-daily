@@ -12,6 +12,7 @@ from app.metadata.variety_meta import get_exchange_code, get_variety_name
 from app.models import DailyBar, Report, SeatRankRow, WatchSymbol, SeatWatchlist
 from app.services.data_mart import build_variety_dataset, materialize_variety_dataset
 from app.services.data_quality import build_data_quality
+from app.services.gap_analysis import build_gap_analysis
 from app.services.seat_archive import load_archive_summary
 from app.services.structure import build_structure, pct_change, sector_for
 
@@ -91,6 +92,7 @@ def build_report(db: Session, trade_date: str) -> Report:
     seat_archive = load_archive_summary(trade_date)
     dataset = build_variety_dataset(db, trade_date)
     materialize_variety_dataset(db, trade_date)
+    gap_analysis = build_gap_analysis(db, trade_date)
     watch_symbols = list(db.scalars(select(WatchSymbol).where(WatchSymbol.enabled == True)))  # noqa: E712
     watch_symbol_codes = {w.symbol.upper() for w in watch_symbols}
     watch_bars = [bar_item(b, pct_change(b)) for b in bars if b.symbol.upper() in watch_symbol_codes]
@@ -102,6 +104,20 @@ def build_report(db: Session, trade_date: str) -> Report:
         if r.long_party_name in watch_seat_names or r.short_party_name in watch_seat_names or r.vol_party_name in watch_seat_names
     ][:50]
 
+    report_sections = build_report_sections(
+        up_count=up_count,
+        down_count=down_count,
+        stage=stage,
+        score=score,
+        structure=structure,
+        seat_archive=seat_archive,
+        dataset=dataset,
+        data_quality=data_quality,
+        gap_analysis=gap_analysis,
+        seat_long=seat_long,
+        seat_short=seat_short,
+    )
+
     payload = {
         "date": trade_date,
         "meta": {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "version": "0.1.0"},
@@ -110,7 +126,7 @@ def build_report(db: Session, trade_date: str) -> Report:
             "stage": stage,
             "heat": heat,
             "risk": risk,
-            "summary": f"上涨 {up_count} 个、下跌 {down_count} 个；市场状态：{stage}。",
+            "summary": report_sections[0]["body"],
         },
         "market": {"up_count": up_count, "down_count": down_count, "turnover": turnover, "volume": volume, "contracts": len(bars)},
         "sectors": sectors,
@@ -139,7 +155,8 @@ def build_report(db: Session, trade_date: str) -> Report:
             )[:10],
         },
         "risk_flags": quality_flags(data_quality),
-        "action_notes": ["MVP 自动摘要，仅作市场复盘参考。"],
+        "report_sections": report_sections,
+        "action_notes": build_action_notes(gap_analysis),
     }
 
     report = db.scalar(select(Report).where(Report.trade_date == trade_date))
@@ -155,6 +172,82 @@ def build_report(db: Session, trade_date: str) -> Report:
     db.commit()
     db.refresh(report)
     return report
+
+
+def build_report_sections(
+    *,
+    up_count: int,
+    down_count: int,
+    stage: str,
+    score: float,
+    structure: dict,
+    seat_archive: dict,
+    dataset: dict,
+    data_quality: dict,
+    gap_analysis: dict,
+    seat_long: list[SeatRankRow],
+    seat_short: list[SeatRankRow],
+) -> list[dict]:
+    breadth = structure.get("sector_breadth") or []
+    active = sorted(breadth, key=lambda x: x.get("volume") or 0, reverse=True)[:3]
+    active_text = "、".join(f"{x.get('name')}成交{human_num(x.get('volume'))}" for x in active) or "暂无明显活跃板块"
+    archive_top = (seat_archive.get("net_delta_top") or [])[:3]
+    archive_text = "、".join(f"{x.get('displayName') or x.get('name')}净变{signed_num(x.get('netDelta'))}" for x in archive_top) or "结构化席位信号暂不突出"
+    long_text = "、".join(f"{r.variety}{r.long_party_name}+{human_num(r.long_open_interest_chg)}" for r in seat_long[:3]) or "多头增仓信号不足"
+    short_text = "、".join(f"{r.variety}{r.short_party_name}+{human_num(r.short_open_interest_chg)}" for r in seat_short[:3]) or "空头增仓信号不足"
+    actionable = gap_analysis.get("actionable_count", 0)
+    explained = gap_analysis.get("explained_count", 0)
+    coverage = data_quality.get("coverage_pct", 0)
+    dataset_count = dataset.get("count", 0)
+
+    return [
+        {
+            "title": "市场结论",
+            "tone": "neutral" if stage == "分化" else "positive" if stage == "偏强" else "negative",
+            "body": f"当前市场状态为{stage}，综合分 {score}。可计算涨跌的合约中，上涨 {up_count} 个、下跌 {down_count} 个；活跃度主要集中在 {active_text}。",
+        },
+        {
+            "title": "主线机会",
+            "tone": "positive",
+            "body": f"从席位与成交结构看，重点关注两条线：一是成交/持仓集中的活跃板块；二是结构化席位净变化靠前的品种。当前结构信号：{archive_text}。多头增仓靠前：{long_text}。",
+        },
+        {
+            "title": "风险提示",
+            "tone": "warning",
+            "body": f"空头增仓与结构信号需要同步观察，避免只看成交热度。当前空头增仓靠前：{short_text}。若板块成交放大但结构席位方向不一致，应优先按分化行情处理。",
+        },
+        {
+            "title": "数据可信度",
+            "tone": "info" if actionable == 0 else "warning",
+            "body": f"本次品种级数据集覆盖 {dataset_count} 个品种，基础数据覆盖率 {coverage}%。数据缺口共 {gap_analysis.get('count', 0)} 条，其中可行动缺口 {actionable} 条、已解释缺口 {explained} 条。当前结论适合作为盘后复盘和次日观察清单，不应单独作为交易依据。",
+        },
+    ]
+
+
+def build_action_notes(gap_analysis: dict) -> list[str]:
+    if gap_analysis.get("actionable_count", 0) == 0:
+        return ["当前数据缺口均已解释，无待处理 actionable 数据缺口。", "日报结论用于复盘和观察清单，不构成交易建议。"]
+    return [f"仍有 {gap_analysis.get('actionable_count')} 个可行动数据缺口，需优先修复后再提高结论权重。", "日报结论用于复盘和观察清单，不构成交易建议。"]
+
+
+def human_num(value) -> str:
+    try:
+        n = float(value or 0)
+    except Exception:
+        return "-"
+    if abs(n) >= 100000000:
+        return f"{n / 100000000:.2f}亿"
+    if abs(n) >= 10000:
+        return f"{n / 10000:.1f}万"
+    return f"{n:.0f}"
+
+
+def signed_num(value) -> str:
+    text = human_num(value)
+    try:
+        return f"+{text}" if float(value or 0) > 0 else text
+    except Exception:
+        return text
 
 
 def quality_flags(data_quality: dict) -> list[str]:

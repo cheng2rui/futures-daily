@@ -29,6 +29,13 @@
         <div v-for="flag in report.risk_flags" :key="flag" class="risk-chip">⚠ {{ flag }}</div>
       </div>
 
+      <div class="report-sections">
+        <div v-for="section in reportSections" :key="section.title" class="report-section" :class="`tone-${section.tone || 'neutral'}`">
+          <div class="section-kicker">{{ section.title }}</div>
+          <p>{{ section.body }}</p>
+        </div>
+      </div>
+
       <div class="layout-grid">
         <SectionCard title="市场风向">
           <div class="signal-stack">
@@ -117,6 +124,7 @@ const marketSignals = computed(() => [
 ])
 const activeSector = computed(() => { const x = [...sectorBreadth.value].sort((a, b) => Number(b.volume || 0) - Number(a.volume || 0))[0]; return x ? `${x.name} ${fmtNum(x.volume)}` : '-' })
 const sourceTip = computed(() => { const quality = report.value.data_quality; if (!quality || quality.status === 'empty') return ''; const bad = (quality.exchanges || []).filter(x => x.status !== 'ok'); if (!bad.length) return `数据来源：交易所/AKShare/增强源，覆盖 ${quality.coverage_pct ?? 0}%。`; return `数据来源提示：${bad.map(x => `${x.exchange} ${x.status}`).join('、')}；部分交易所可能使用 fallback 或暂无数据。` })
+const reportSections = computed(() => report.value.report_sections || [])
 
 const sectorVolumeOption = computed(() => barOption({ names: sectorBreadth.value.map(x => x.name), series: [
   { name: '成交量', data: sectorBreadth.value.map(x => Number(x.volume || 0)), color: '#3f5efb' },
@@ -167,6 +175,14 @@ watch(() => route.query.date, load)
 .notice.error { background:#fff0f0; color:#bd3434; border-color:#ffd6d6; }
 .risk-strip { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
 .risk-chip { background:#fff7e6; border:1px solid #ffd591; color:#8a5200; padding:9px 12px; border-radius:999px; font-weight:700; }
+.report-sections { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:16px 0; }
+.report-section { background:#fff; border:1px solid #e8edf5; border-radius:18px; padding:16px; box-shadow:0 10px 24px rgba(15,23,42,.06); border-top:4px solid #94a3b8; }
+.report-section.tone-positive { border-top-color:#16c79a; }
+.report-section.tone-negative { border-top-color:#e94560; }
+.report-section.tone-warning { border-top-color:#f5a623; }
+.report-section.tone-info { border-top-color:#3f5efb; }
+.section-kicker { font-weight:900; color:#0f172a; margin-bottom:8px; }
+.report-section p { margin:0; color:#475569; line-height:1.75; font-size:13px; }
 .layout-grid, .chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
 .layout-grid.three { grid-template-columns:1fr 1fr 1fr; }
 .signal-stack { display:grid; gap:12px; }
@@ -187,6 +203,6 @@ watch(() => route.query.date, load)
 .empty-state { padding:28px; text-align:center; color:#888; background:#fafafa; border-radius:14px; }
 .empty-state.large { margin:18px 0; padding:48px; }
 .empty-state.small { padding:18px; }
-@media (max-width:1100px) { .metric-grid, .layout-grid, .layout-grid.three, .chart-grid { grid-template-columns:1fr 1fr; } }
-@media (max-width:760px) { .hero { flex-direction:column; } .metric-grid, .layout-grid, .layout-grid.three, .chart-grid { grid-template-columns:1fr; } .hero h1 { font-size:26px; } }
+@media (max-width:1100px) { .metric-grid, .layout-grid, .layout-grid.three, .chart-grid, .report-sections { grid-template-columns:1fr 1fr; } }
+@media (max-width:760px) { .hero { flex-direction:column; } .metric-grid, .layout-grid, .layout-grid.three, .chart-grid, .report-sections { grid-template-columns:1fr; } .hero h1 { font-size:26px; } }
 </style>
