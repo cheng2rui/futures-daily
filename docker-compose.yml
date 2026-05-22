@@ -1,0 +1,18 @@
+services:
+  futures-daily:
+    image: futures-daily:latest
+    build: .
+    container_name: futures-daily
+    ports:
+      - "8500:8500"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - /Users/rey/.openclaw/workspace-rsstsx-bot:/rsstsx:ro
+    environment:
+      - FUTURES_DAILY_CONFIG=/app/config/config.yaml
+      - FUTURES_DAILY_DB=/app/data/futures_daily.db
+      - no_proxy=*
+      - NO_PROXY=*
+    restart: unless-stopped

@@ -1,0 +1,49 @@
+server:
+  host: 0.0.0.0
+  port: 8500
+
+database:
+  url: sqlite:////app/data/futures_daily.db
+
+scheduler:
+  enabled: true
+  timezone: Asia/Shanghai
+  daily_report_cron: "20 16 * * 1-5"
+
+exchanges:
+  enabled: [DCE, CZCE, SHFE, CFFEX, GFEX, INE]
+
+report:
+  include_financial_futures: true
+  include_commodity_futures: true
+  include_seat_report: true
+  trading_day_mode: auto
+
+seat_archive:
+  enabled: true
+  path: /rsstsx/structured_archive
+  summary_path: /rsstsx
+
+notify:
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""
+  wecom:
+    enabled: false
+  wechatbot:
+    enabled: false
+
+assistant:
+  enabled: false
+  global_chat: false
+  provider:
+    model: ""
+    base_url: ""
+    api_key: ""
+    temperature: 0.2
+  features:
+    daily_summary: false
+    seat_analysis: false
+    symbol_explain: false
+    push_digest: false
