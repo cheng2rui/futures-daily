@@ -72,10 +72,18 @@
     <div class="grid-2">
       <SectionCard title="自选品种">
         <form class="inline-form" @submit.prevent="addSymbol">
-          <input v-model="symbolForm.symbol" placeholder="品种，如 RB" />
+          <input v-model="symbolForm.symbol" placeholder="品种/合约，如 RB 或 TA2609" />
           <input v-model="symbolForm.exchange" placeholder="交易所，可空" />
           <input v-model="symbolForm.name" placeholder="名称，可空" />
           <button>添加</button>
+        </form>
+        <form class="bulk-form" @submit.prevent="bulkImportSymbols">
+          <textarea v-model="bulkSymbols" placeholder="批量导入，一行或空格分隔：TA2609 RU2609 PX2607 JD2606 CJ2609 A2607 NI RB PB"></textarea>
+          <div class="form-actions">
+            <button :disabled="bulkImporting">{{ bulkImporting ? '导入中...' : '批量导入自选' }}</button>
+            <label class="mini-check"><input v-model="bulkReplace" type="checkbox" /> 替换现有自选</label>
+            <span v-if="watchMessage" class="form-message">{{ watchMessage }}</span>
+          </div>
         </form>
         <div class="list">
           <div v-for="x in symbols" :key="x.id" class="item">
@@ -115,6 +123,10 @@ const settings = ref({})
 const symbols = ref([])
 const seats = ref([])
 const symbolForm = ref({ symbol: '', exchange: '', name: '' })
+const bulkSymbols = ref('')
+const bulkReplace = ref(false)
+const bulkImporting = ref(false)
+const watchMessage = ref('')
 const seatForm = ref({ seat_name: '', alias: '' })
 const telegramForm = ref({ enabled: false, bot_token: '', chat_id: '' })
 const telegramMasked = ref(false)
@@ -152,7 +164,24 @@ async function addSymbol() {
   if (!symbolForm.value.symbol.trim()) return
   await api.post('/watch/symbols', symbolForm.value)
   symbolForm.value = { symbol: '', exchange: '', name: '' }
+  watchMessage.value = '自选品种已添加'
   await load()
+}
+
+async function bulkImportSymbols() {
+  if (!bulkSymbols.value.trim()) return
+  bulkImporting.value = true
+  watchMessage.value = ''
+  try {
+    const { data } = await api.post('/watch/symbols/bulk', { text: bulkSymbols.value, replace: bulkReplace.value })
+    watchMessage.value = `已导入 ${data.count || 0} 个自选品种`
+    bulkSymbols.value = ''
+    await load()
+  } catch (err) {
+    watchMessage.value = '批量导入失败，请检查品种/合约格式'
+  } finally {
+    bulkImporting.value = false
+  }
 }
 
 async function addSeat() {
@@ -281,8 +310,11 @@ onMounted(load)
 .page-title { margin-bottom: 20px; color: #1a1a2e; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
 .inline-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; margin-bottom: 14px; }
+.bulk-form { display:grid; gap:10px; margin-bottom:14px; padding:12px; border:1px solid #e2e8f0; border-radius:12px; background:#f8fafc; }
+.bulk-form textarea { min-height:82px; resize:vertical; border:1px solid #ddd; border-radius:8px; padding:9px 10px; font-family:inherit; }
 .inline-form input, .notify-form input { border: 1px solid #ddd; border-radius: 8px; padding: 9px 10px; }
-.inline-form button, .notify-form button { background: #e94560; border: 0; color: white; border-radius: 8px; padding: 9px 14px; cursor: pointer; font-weight: 800; }
+.inline-form button, .notify-form button, .bulk-form button { background: #e94560; border: 0; color: white; border-radius: 8px; padding: 9px 14px; cursor: pointer; font-weight: 800; }
+.mini-check { display:flex; align-items:center; gap:6px; color:#64748b; font-weight:800; }
 .notify-form { display:grid; gap:14px; }
 .notify-form h3 { margin:0; color:#1a1a2e; }
 .notify-subform { margin-top:18px; border-top:1px solid #e2e8f0; padding-top:18px; }

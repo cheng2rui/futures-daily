@@ -54,8 +54,9 @@
 
       <div v-if="activeDashboardMode === 'intraday'" class="intraday-disclaimer">{{ intraday.disclaimer || '非实时行情，仅基于最近一次阶段性采集结果。' }}</div>
 
-      <div v-if="reportVersionWarning" class="notice version-warning">
-        当前日报由 v{{ reportVersion }} 生成，服务已是 v{{ appVersion }}。建议重新生成日报以应用最新逻辑。
+      <div v-if="reportVersionWarning" class="notice version-warning version-rebuild">
+        <span>当前日报由 v{{ reportVersion }} 生成，服务已是 v{{ appVersion }}。建议重新生成日报以应用最新逻辑。</span>
+        <button class="mini-action" :disabled="loading" @click="rebuildCurrentReport">{{ loading ? '重建中...' : '用当前版本重建' }}</button>
       </div>
 
       <div v-if="dashboardEditing" class="module-picker">
@@ -118,6 +119,21 @@
                 <ul><li v-for="reason in visibleItems(item.reasons || [], card, 2)" :key="reason">{{ reason }}</li></ul>
                 <div v-if="isCardExpanded(card.id) && item.news_viewpoint" class="viewpoint-chip" :class="`bias-${item.news_viewpoint.bias || 'neutral'}`">资讯观点：{{ item.news_viewpoint.summary }}</div>
                 <div v-if="isCardExpanded(card.id)" class="watch-next">次日观察：{{ item.watch_next }}</div>
+              </div>
+            </div>
+          </template>
+
+          <template v-else-if="card.id === 'watchFocus'">
+            <div v-if="!watchFocusRows.length" class="empty-state small">暂无自选品种。可在设置中批量导入 TA2609 / RU2609 / RB 等关注项。</div>
+            <div v-else class="watch-focus-grid">
+              <div v-for="item in watchFocusRows" :key="`${item.exchange}-${item.contract}`" class="watch-focus-card">
+                <div class="watch-focus-head"><b>{{ item.name || item.symbol }}</b><span>{{ item.contract || item.main_contract || item.symbol }}</span></div>
+                <div class="watch-focus-price">{{ item.close ?? '-' }}</div>
+                <div class="watch-focus-meta">
+                  <em :class="toneClass(item.change_pct)">{{ item.change_pct == null ? '-' : signedPct(item.change_pct) }}</em>
+                  <span>{{ exchangeName(item.exchange) }} · {{ item.sector || '-' }}</span>
+                </div>
+                <div class="watch-focus-sub">成交 {{ fmtNum(item.volume) }}｜持仓 {{ fmtNum(item.open_interest) }}</div>
               </div>
             </div>
           </template>
@@ -258,6 +274,7 @@ const rankColumns = ['交易所', '品种', '合约', '板块', '收盘', '涨�
 const DASHBOARD_LAYOUT_KEY = 'futures-daily.today.dashboard.v1'
 const DASHBOARD_MODE_KEY = 'futures-daily.today.dashboard.mode.v1'
 const defaultDashboardCards = [
+  { id: 'watchFocus', title: '我的关注', size: 'wide', mode: 'intraday' },
   { id: 'signals', title: '市场风向', mode: 'intraday' },
   { id: 'sectors', title: '板块强弱 Top', mode: 'intraday' },
   { id: 'abnormal', title: '盘中异动', size: 'wide', mode: 'intraday' },
@@ -299,6 +316,7 @@ const visibleDashboardCards = computed(() => modeDashboardCards.value.filter(car
 const dashboardMarket = computed(() => activeDashboardMode.value === 'intraday' ? intraday.value.market || {} : report.value.market || {})
 const reportVersion = computed(() => report.value.meta?.version || '')
 const reportVersionWarning = computed(() => activeDashboardMode.value === 'review' && reportVersion.value && appVersion.value && reportVersion.value !== appVersion.value)
+const watchFocusRows = computed(() => (intraday.value.watch_symbols || []).slice(0, 12))
 const watchRows = computed(() => rows(activeDashboardMode.value === 'intraday' ? intraday.value.watch_symbols : report.value.watch_symbols).slice(0, 14))
 const breadthRows = computed(() => (activeDashboardMode.value === 'intraday' ? intraday.value.sectors || [] : report.value.structure?.sector_breadth || []).map(x => [x.name, x.count, x.up, x.down, x.up_ratio != null ? `${x.up_ratio}%` : '-', fmtNum(x.volume), fmtNum(x.open_interest)]))
 const gainerRows = computed(() => rows(activeDashboardMode.value === 'intraday' ? intraday.value.rankings?.gainers : report.value.rankings?.gainers))
@@ -512,6 +530,22 @@ async function loadIntraday(refresh = false) {
   }
 }
 async function generate() { loading.value = true; error.value = ''; notice.value = ''; try { await api.post('/reports/generate', null, { params: viewingDate.value ? { trade_date: viewingDate.value, collect: true } : {} }); await load(); await loadIntraday(false); notice.value = '日报已重新生成。' } finally { loading.value = false } }
+async function rebuildCurrentReport() {
+  const tradeDate = report.value.date || viewingDate.value
+  if (!tradeDate) return
+  loading.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    await api.post('/reports/generate', null, { params: { trade_date: tradeDate, collect: false } })
+    await load()
+    notice.value = '日报已用当前版本重建。'
+  } catch (err) {
+    error.value = '日报重建失败，请检查任务记录或服务日志。'
+  } finally {
+    loading.value = false
+  }
+}
 async function recollectExchange(x) {
   if (!report.value.date || !x?.exchange || !isRecoverableQualityRow(x)) return
   error.value = ''
@@ -603,6 +637,7 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .intraday-actions label { display:flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap; }
 .intraday-disclaimer { margin:-2px 0 12px; padding:10px 13px; color:#64748b; background:#f8fafc; border:1px solid #e8edf5; border-radius:14px; font-size:13px; font-weight:800; }
 .notice.version-warning { background:#fff7e6; color:#8a5200; border-color:#ffd591; }
+.version-rebuild { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
 .secondary.light { color:#3157d5; background:#f5f7ff; border-color:#dfe6ff; box-shadow:none; }
 .module-picker { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; padding:12px; border-radius:16px; background:#f8fafc; border:1px dashed #cbd5e1; }
 .module-picker label { display:flex; gap:6px; align-items:center; color:#475569; background:#fff; border:1px solid #e2e8f0; border-radius:999px; padding:7px 10px; font-size:13px; font-weight:800; cursor:pointer; }
@@ -656,6 +691,16 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .news-item b { display:block; color:#0f172a; line-height:1.45; }
 .news-item span { display:block; margin-top:5px; color:#94a3b8; font-size:12px; }
 .news-item:hover { border-color:#b8c4ff; box-shadow:0 8px 18px rgba(63,94,251,.08); }
+.watch-focus-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.watch-focus-card { border:1px solid #e8edf5; border-radius:16px; padding:13px; background:linear-gradient(180deg,#fff,#fbfdff); box-shadow:0 6px 16px rgba(15,23,42,.035); }
+.watch-focus-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+.watch-focus-head b { color:#0f172a; font-size:16px; }
+.watch-focus-head span { color:#64748b; background:#f1f5f9; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:900; }
+.watch-focus-price { margin-top:12px; color:#0f172a; font-size:24px; font-weight:950; }
+.watch-focus-meta { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-top:6px; }
+.watch-focus-meta em { font-style:normal; font-weight:950; }
+.watch-focus-meta span, .watch-focus-sub { color:#94a3b8; font-size:12px; }
+.watch-focus-sub { margin-top:8px; }
 .watch-digest-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
 .watch-digest-card { border:1px solid #e8edf5; border-radius:16px; padding:12px; background:#fff; box-shadow:0 6px 16px rgba(15,23,42,.035); }
 .watch-digest-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
@@ -702,6 +747,6 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .empty-state { padding:28px; text-align:center; color:#888; background:#fafafa; border-radius:14px; }
 .empty-state.large { margin:18px 0; padding:48px; }
 .empty-state.small { padding:18px; }
-@media (max-width:1100px) { .dashboard-masonry { column-count:2; } .metric-grid, .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid { grid-template-columns:1fr 1fr; } }
-@media (max-width:760px) { .hero, .dashboard-toolbar { flex-direction:column; align-items:stretch; } .dashboard-masonry { column-count:1; } .metric-grid, .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid { grid-template-columns:1fr; } .hero h1 { font-size:26px; } }
+@media (max-width:1100px) { .dashboard-masonry { column-count:2; } .metric-grid, .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr 1fr; } }
+@media (max-width:760px) { .hero, .dashboard-toolbar { flex-direction:column; align-items:stretch; } .dashboard-masonry { column-count:1; } .metric-grid, .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr; } .hero h1 { font-size:26px; } }
 </style>

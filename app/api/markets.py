@@ -72,6 +72,11 @@ def _bar_payload(bar: DailyBar, meta: dict[tuple[str, str], Contract]) -> dict:
     }
 
 
+def _watch_variety(symbol: str) -> str:
+    text = (symbol or "").upper()
+    return "".join(ch for ch in text if ch.isalpha())
+
+
 def _main_contracts(rows: list[dict]) -> list[dict]:
     by_key: dict[tuple[str, str], dict] = {}
     for row in rows:
@@ -155,8 +160,9 @@ def _build_intraday_snapshot(db: Session, selected_date: str | None, collect_res
     contracts = db.scalars(select(Contract)).all()
     meta = {((c.exchange or "").upper(), (c.symbol or "").upper()): c for c in contracts}
     watch_symbols = db.scalars(select(WatchSymbol).where(WatchSymbol.enabled == True).order_by(WatchSymbol.sort_order, WatchSymbol.symbol)).all()  # noqa: E712
-    watch_keys = {((w.exchange or "").upper(), (w.symbol or "").upper()) for w in watch_symbols}
-    watch_symbol_only = {(w.symbol or "").upper() for w in watch_symbols if not w.exchange}
+    watch_keys = {((w.exchange or "").upper(), _watch_variety(w.symbol)) for w in watch_symbols if _watch_variety(w.symbol)}
+    watch_symbol_only = {_watch_variety(w.symbol) for w in watch_symbols if not w.exchange and _watch_variety(w.symbol)}
+    watch_contracts = {(w.symbol or "").upper() for w in watch_symbols if any(ch.isdigit() for ch in (w.symbol or ""))}
 
     rows = [_bar_payload(bar, meta) for bar in bars]
     liquid_rows = [r for r in rows if (r.get("volume") or 0) > 0 and (r.get("close") or 0) > 0]
@@ -187,7 +193,7 @@ def _build_intraday_snapshot(db: Session, selected_date: str | None, collect_res
             "losers": sorted(main_rows, key=lambda r: r.get("change_pct") if r.get("change_pct") is not None else 999)[:10],
             "volume": sorted(liquid_rows, key=lambda r: float(r.get("volume") or 0), reverse=True)[:10],
         },
-        "watch_symbols": [r for r in main_rows if ((r.get("exchange"), r.get("symbol")) in watch_keys or r.get("symbol") in watch_symbol_only)],
+        "watch_symbols": [r for r in main_rows if ((r.get("exchange"), r.get("symbol")) in watch_keys or r.get("symbol") in watch_symbol_only or (r.get("contract") or "").upper() in watch_contracts)],
         "sectors": _sector_summary(main_rows),
     }
 

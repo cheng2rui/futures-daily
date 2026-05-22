@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -7,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import SeatWatchlist, WatchSymbol
+from app.metadata.variety_meta import get_exchange_code, get_variety_name
+from app.services.structure import sector_for
 
 router = APIRouter(prefix="/api/watch", tags=["watch"])
 
@@ -28,10 +32,46 @@ class SeatWatchIn(BaseModel):
     note: str = ""
 
 
+class WatchBulkIn(BaseModel):
+    text: str
+    replace: bool = False
+
+
 @router.get("/symbols")
 def list_symbols(db: Session = Depends(get_db)):
     rows = db.scalars(select(WatchSymbol).order_by(WatchSymbol.sort_order, WatchSymbol.symbol)).all()
     return [symbol_out(r) for r in rows]
+
+
+@router.post("/symbols/bulk")
+def bulk_upsert_symbols(payload: WatchBulkIn, db: Session = Depends(get_db)):
+    items = parse_watch_text(payload.text)
+    if not items:
+        raise HTTPException(status_code=400, detail="no valid symbols found")
+    if payload.replace:
+        for row in db.scalars(select(WatchSymbol)).all():
+            db.delete(row)
+        db.flush()
+    existing = {(r.exchange or "", r.symbol or ""): r for r in db.scalars(select(WatchSymbol)).all()}
+    changed = []
+    for idx, item in enumerate(items):
+        key = (item["exchange"], item["symbol"])
+        row = existing.get(key)
+        if row:
+            row.name = item["name"] or row.name
+            row.sector = item["sector"] or row.sector
+            row.enabled = True
+            row.sort_order = idx
+            row.note = item["note"] or row.note
+        else:
+            row = WatchSymbol(**item, enabled=True, sort_order=idx)
+            db.add(row)
+            existing[key] = row
+        changed.append(row)
+    db.commit()
+    for row in changed:
+        db.refresh(row)
+    return {"ok": True, "count": len(changed), "items": [symbol_out(r) for r in changed]}
 
 
 @router.post("/symbols")
@@ -107,6 +147,35 @@ def delete_seat(item_id: int, db: Session = Depends(get_db)):
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+def parse_watch_text(text: str) -> list[dict]:
+    seen: set[tuple[str, str]] = set()
+    items = []
+    for raw in re.split(r"[\n,，;；\s]+", text or ""):
+        token = raw.strip().upper()
+        if not token:
+            continue
+        match = re.match(r"^([A-Z]+)(\d{3,4})?$", token)
+        if not match:
+            continue
+        variety = match.group(1)
+        contract_suffix = match.group(2) or ""
+        symbol = token if contract_suffix else variety
+        exchange = get_exchange_code(variety, "")
+        key = (exchange, symbol)
+        if key in seen:
+            continue
+        seen.add(key)
+        name = get_variety_name(variety)
+        items.append({
+            "symbol": symbol,
+            "exchange": exchange,
+            "name": name,
+            "sector": sector_for(variety),
+            "note": f"contract:{variety}{contract_suffix}" if contract_suffix else "",
+        })
+    return items
 
 
 def symbol_out(r: WatchSymbol) -> dict:
