@@ -12,8 +12,10 @@ from app.models import JobRun, Report
 from app.services.collector import collect_daily_market, collect_seat_ranks
 from app.services.data_quality import build_data_quality
 from app.services.quhe_collector import collect_quhe_enhancements
-from app.services.report_builder import build_report
+from app.services.report_builder import REPORT_SCHEMA_VERSION, build_report
 from app.services.trading_day import normalize_trade_date
+
+from app.version import VERSION
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -38,7 +40,7 @@ def latest_report(db: Session = Depends(get_db)):
     report = db.scalar(select(Report).order_by(desc(Report.trade_date)).limit(1))
     if not report:
         return empty_report()
-    return json.loads(report.report_json)
+    return ensure_report_payload(db, report)
 
 
 @router.get("/{trade_date}")
@@ -47,7 +49,7 @@ def get_report(trade_date: str, db: Session = Depends(get_db)):
     report = db.scalar(select(Report).where(Report.trade_date == trade_date))
     if not report:
         raise HTTPException(status_code=404, detail="report not found")
-    return json.loads(report.report_json)
+    return ensure_report_payload(db, report)
 
 
 @router.post("/generate")
@@ -88,10 +90,23 @@ def generate_report(trade_date: str | None = None, collect: bool = True, db: Ses
     }
 
 
+def ensure_report_payload(db: Session, report: Report) -> dict:
+    try:
+        payload = json.loads(report.report_json or "{}")
+    except Exception:
+        payload = {}
+    meta = payload.get("meta") if isinstance(payload, dict) else {}
+    schema_version = int((meta or {}).get("report_schema_version") or 0)
+    if schema_version < REPORT_SCHEMA_VERSION or not payload.get("report_sections"):
+        report = build_report(db, report.trade_date)
+        payload = json.loads(report.report_json or "{}")
+    return payload
+
+
 def empty_report():
     return {
         "date": None,
-        "meta": {"generated_at": None, "version": "0.1.0"},
+        "meta": {"generated_at": None, "version": VERSION, "report_schema_version": REPORT_SCHEMA_VERSION},
         "overview": {"score": 0, "stage": "暂无数据", "heat": 0, "risk": 0, "summary": "暂无日报，请先生成。"},
         "market": {"up_count": 0, "down_count": 0, "turnover": 0, "volume": 0, "contracts": 0},
         "sectors": [],

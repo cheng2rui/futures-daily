@@ -17,6 +17,11 @@ from app.services.seat_archive import load_archive_summary
 from app.services.structure import build_structure, pct_change, sector_for
 
 
+from app.version import VERSION
+
+REPORT_SCHEMA_VERSION = 2
+
+
 def notional_value(bar: DailyBar) -> float | None:
     pv = get_point_value(bar.symbol)
     if pv is None or bar.close is None or bar.open_interest is None:
@@ -120,7 +125,7 @@ def build_report(db: Session, trade_date: str) -> Report:
 
     payload = {
         "date": trade_date,
-        "meta": {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "version": "0.1.0"},
+        "meta": {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "version": VERSION, "report_schema_version": REPORT_SCHEMA_VERSION},
         "overview": {
             "score": score,
             "stage": stage,
