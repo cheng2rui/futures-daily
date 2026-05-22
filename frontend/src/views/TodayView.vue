@@ -1,9 +1,10 @@
 <template>
   <div class="today">
-    <div class="page-head">
+    <div class="hero">
       <div>
-        <h2 class="page-title">{{ viewingDate ? '历史期货日报' : '今日期货日报' }}</h2>
-        <p class="muted">{{ displayDate }} ｜ {{ report.meta?.generated_at || '暂无生成时间' }}</p>
+        <div class="eyebrow">Futures Daily · {{ displayDate }}</div>
+        <h1>{{ report.overview?.stage || (viewingDate ? '历史期货日报' : '今日期货日报') }}</h1>
+        <p>{{ report.overview?.summary || '暂无日报数据。点击右上角生成日报，系统会采集行情、席位和结构化归档后生成市场概览。' }}</p>
       </div>
       <div class="actions">
         <router-link v-if="viewingDate" to="/" class="secondary">查看最新</router-link>
@@ -14,55 +15,89 @@
     <div v-if="error" class="notice error">{{ error }}</div>
     <div v-else-if="sourceTip" class="notice">{{ sourceTip }}</div>
 
-    <SectionCard :title="report.overview?.stage || '暂无数据'">
-      <div v-if="isEmptyReport" class="empty-state">
-        暂无日报数据。点击右上角「生成日报」采集行情并生成概览。
+    <div class="metric-grid">
+      <div class="metric-card accent-red">
+        <div class="metric-label">综合温度</div>
+        <div class="metric-main">{{ report.overview?.score ?? 0 }}</div>
+        <div class="metric-sub">{{ report.overview?.heat || '暂无热度' }}</div>
       </div>
-      <template v-else>
-        <p class="summary">{{ report.overview?.summary }}</p>
-        <div v-if="report.risk_flags?.length" class="flags">
-          <div v-for="flag in report.risk_flags" :key="flag" class="flag">⚠ {{ flag }}</div>
-        </div>
-      </template>
-    </SectionCard>
-
-    <div class="kpi-row">
-      <KpiCard label="综合分" :value="report.overview?.score ?? 0" color="#e94560" />
-      <KpiCard label="上涨品种" :value="report.market?.up_count ?? 0" color="#16c79a" />
-      <KpiCard label="下跌品种" :value="report.market?.down_count ?? 0" color="#0f3460" />
-      <KpiCard label="数据覆盖" :value="report.data_quality?.coverage_pct ?? 0" unit="%" color="#f5a623" />
+      <div class="metric-card accent-green">
+        <div class="metric-label">上涨 / 下跌</div>
+        <div class="metric-main">{{ report.market?.up_count ?? 0 }} / {{ report.market?.down_count ?? 0 }}</div>
+        <div class="metric-sub">全市场 {{ report.market?.contracts ?? 0 }} 合约</div>
+      </div>
+      <div class="metric-card accent-blue">
+        <div class="metric-label">成交量</div>
+        <div class="metric-main">{{ fmtNum(report.market?.volume) }}</div>
+        <div class="metric-sub">总成交</div>
+      </div>
+      <div class="metric-card accent-orange">
+        <div class="metric-label">数据覆盖</div>
+        <div class="metric-main">{{ report.data_quality?.coverage_pct ?? 0 }}%</div>
+        <div class="metric-sub">{{ qualityOkText }}</div>
+      </div>
     </div>
 
-    <SectionCard title="自选品种">
-      <div v-if="!watchRows.length" class="empty-state small">暂无自选品种数据。可在设置中维护关注品种，或等待行情采集完成。</div>
-      <SimpleTable v-else :columns="rankColumns" :data="watchRows" />
-    </SectionCard>
+    <div v-if="isEmptyReport" class="empty-state large">暂无日报数据。建议先生成日报，再查看市场结构、席位信号和数据资产。</div>
 
-    <SectionCard title="数据质量" style="margin-top:16px">
-      <SimpleTable :columns="['交易所', '状态', '日行情', '席位', '错误']" :data="qualityRows" />
-    </SectionCard>
+    <template v-else>
+      <div v-if="report.risk_flags?.length" class="risk-strip">
+        <div v-for="flag in report.risk_flags" :key="flag" class="risk-chip">⚠ {{ flag }}</div>
+      </div>
 
-    <SectionCard title="板块强弱" style="margin-top:16px">
-      <SimpleTable :columns="['板块', '平均涨跌幅', '合约数']" :data="sectorRows" />
-    </SectionCard>
+      <div class="layout-grid">
+        <SectionCard title="市场风向">
+          <div class="signal-stack">
+            <div v-for="item in marketSignals" :key="item.label" class="signal-item">
+              <span class="signal-name">{{ item.label }}</span>
+              <strong :class="item.tone">{{ item.value }}</strong>
+            </div>
+          </div>
+        </SectionCard>
 
-    <SectionCard title="板块广度" style="margin-top:16px">
-      <SimpleTable :columns="['板块', '合约数', '上涨', '下跌', '上涨占比', '成交量', '持仓量']" :data="breadthRows" />
-    </SectionCard>
+        <SectionCard title="板块强弱 Top">
+          <div class="sector-list">
+            <div v-for="s in sectorStrengthTop" :key="s.name" class="sector-row">
+              <div class="sector-head"><span>{{ s.name }}</span><b :class="toneClass(s.avg_change)">{{ signedPct(s.avg_change) }}</b></div>
+              <div class="bar"><span :style="{ width: barWidth(s.avg_change), background: barColor(s.avg_change) }"></span></div>
+            </div>
+          </div>
+        </SectionCard>
+      </div>
 
-    <SectionCard title="席位结构信号" style="margin-top:16px">
-      <div v-if="!seatSignalRows.length" class="empty-state small">暂无结构化席位信号。</div>
-      <SimpleTable v-else :columns="['交易所', '品种', '净变化', '多空比', 'CR5', '方向']" :data="seatSignalRows" />
-    </SectionCard>
+      <div class="layout-grid three">
+        <SectionCard title="涨幅 TOP10">
+          <SimpleTable :columns="rankColumns" :data="gainerRows" />
+        </SectionCard>
+        <SectionCard title="跌幅 TOP10">
+          <SimpleTable :columns="rankColumns" :data="loserRows" />
+        </SectionCard>
+        <SectionCard title="结构信号 TOP">
+          <div v-if="!seatSignalCards.length" class="empty-state small">暂无结构化席位信号。</div>
+          <div v-else class="seat-cards">
+            <div v-for="x in seatSignalCards" :key="`${x.exchange}-${x.name}`" class="seat-card">
+              <div class="seat-title"><span>{{ x.name }}</span><em>{{ x.exchange }}</em></div>
+              <div class="seat-main" :class="toneClass(x.netDelta)">{{ fmtSigned(x.netDelta) }}</div>
+              <div class="seat-sub">多空比 {{ x.longShortRatio || '-' }} · 方向 {{ x.netDir || '-' }}</div>
+            </div>
+          </div>
+        </SectionCard>
+      </div>
 
-    <div class="grid-2">
-      <SectionCard title="涨幅 TOP10">
-        <SimpleTable :columns="rankColumns" :data="gainerRows" />
+      <SectionCard title="自选品种" style="margin-top:16px">
+        <div v-if="!watchRows.length" class="empty-state small">暂无自选品种数据。可在设置中维护关注品种，或等待行情采集完成。</div>
+        <SimpleTable v-else :columns="rankColumns" :data="watchRows" />
       </SectionCard>
-      <SectionCard title="跌幅 TOP10">
-        <SimpleTable :columns="rankColumns" :data="loserRows" />
-      </SectionCard>
-    </div>
+
+      <div class="layout-grid" style="margin-top:16px">
+        <SectionCard title="板块广度">
+          <SimpleTable :columns="['板块', '合约数', '上涨', '下跌', '上涨占比', '成交量', '持仓量']" :data="breadthRows" />
+        </SectionCard>
+        <SectionCard title="数据质量">
+          <SimpleTable :columns="['交易所', '状态', '日行情', '席位', '错误']" :data="qualityRows" />
+        </SectionCard>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -70,7 +105,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api.js'
-import KpiCard from '../components/KpiCard.vue'
 import SectionCard from '../components/SectionCard.vue'
 import SimpleTable from '../components/SimpleTable.vue'
 
@@ -84,12 +118,17 @@ const viewingDate = computed(() => route.query.date ? String(route.query.date) :
 const displayDate = computed(() => formatDate(report.value.date || viewingDate.value) || '暂无日期')
 const isEmptyReport = computed(() => !report.value.date && !report.value.overview?.summary)
 
-const watchRows = computed(() => rows(report.value.watch_symbols))
-const sectorRows = computed(() => (report.value.sectors || []).map(x => [x.name, `${x.avg_change}%`, x.count]))
+const watchRows = computed(() => rows(report.value.watch_symbols).slice(0, 14))
 const breadthRows = computed(() => (report.value.structure?.sector_breadth || []).map(x => [x.name, x.count, x.up, x.down, `${x.up_ratio}%`, fmtNum(x.volume), fmtNum(x.open_interest)]))
 const gainerRows = computed(() => rows(report.value.rankings?.gainers))
 const loserRows = computed(() => rows(report.value.rankings?.losers))
-const seatSignalRows = computed(() => (report.value.seats?.archive?.net_delta_top || []).slice(0, 8).map(x => [x.exchange, x.displayName || x.name, fmtSigned(x.netDelta), x.longShortRatio || '-', `${x.longCR5 ?? '-'} / ${x.shortCR5 ?? '-'}`, x.netDir || '-']))
+const seatSignalCards = computed(() => (report.value.seats?.archive?.net_delta_top || []).slice(0, 6).map(x => ({
+  exchange: x.exchange,
+  name: x.displayName || x.name,
+  netDelta: x.netDelta,
+  longShortRatio: x.longShortRatio,
+  netDir: x.netDir,
+})))
 const qualityRows = computed(() => (report.value.data_quality?.exchanges || []).map(x => [
   x.exchange,
   x.status,
@@ -97,11 +136,32 @@ const qualityRows = computed(() => (report.value.data_quality?.exchanges || []).
   x.seat_rank?.rows ?? 0,
   x.daily?.error || x.seat_rank?.error || '-'
 ]))
+const sectorStrengthTop = computed(() => [...(report.value.sectors || [])].sort((a, b) => Math.abs(Number(b.avg_change || 0)) - Math.abs(Number(a.avg_change || 0))).slice(0, 8))
+const qualityOkText = computed(() => {
+  const q = report.value.data_quality
+  if (!q || q.status === 'empty') return '暂无质量数据'
+  const bad = (q.exchanges || []).filter(x => x.status !== 'ok').length
+  return bad ? `${bad} 个交易所需关注` : '覆盖良好'
+})
+const marketSignals = computed(() => [
+  { label: '市场阶段', value: report.value.overview?.stage || '-', tone: '' },
+  { label: '风险状态', value: report.value.overview?.risk || '-', tone: 'tone-warn' },
+  { label: '最强板块', value: bestSector.value, tone: 'tone-up' },
+  { label: '最弱板块', value: worstSector.value, tone: 'tone-down' },
+])
+const bestSector = computed(() => {
+  const x = [...(report.value.sectors || [])].sort((a, b) => Number(b.avg_change || 0) - Number(a.avg_change || 0))[0]
+  return x ? `${x.name} ${signedPct(x.avg_change)}` : '-'
+})
+const worstSector = computed(() => {
+  const x = [...(report.value.sectors || [])].sort((a, b) => Number(a.avg_change || 0) - Number(b.avg_change || 0))[0]
+  return x ? `${x.name} ${signedPct(x.avg_change)}` : '-'
+})
 const sourceTip = computed(() => {
   const quality = report.value.data_quality
   if (!quality || quality.status === 'empty') return ''
   const bad = (quality.exchanges || []).filter(x => x.status !== 'ok')
-  if (!bad.length) return `数据来源：交易所/AKShare，覆盖 ${quality.coverage_pct ?? 0}%，未触发明显 fallback。`
+  if (!bad.length) return `数据来源：交易所/AKShare/增强源，覆盖 ${quality.coverage_pct ?? 0}%。`
   return `数据来源提示：${bad.map(x => `${x.exchange} ${x.status}`).join('、')}；部分交易所可能使用 fallback 或暂无数据。`
 })
 
@@ -110,18 +170,22 @@ function emptyReport() {
 }
 
 function rows(items = []) {
-  return (items || []).map(x => [x.exchange, x.symbol, x.contract, x.sector, x.close ?? '-', x.change_pct == null ? '-' : `${x.change_pct}%`])
+  return (items || []).map(x => [x.exchange, x.symbol, x.contract, x.sector, x.close ?? '-', x.change_pct == null ? '-' : signedPct(x.change_pct)])
 }
 
+function signedPct(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}%` : `${v}%` }
 function fmtSigned(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}` : `${v}` }
-
 function fmtNum(value) {
   if (value == null) return '-'
   const n = Number(value)
   if (!Number.isFinite(n)) return value
+  if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(2)}亿`
   if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`
   return n.toFixed(0)
 }
+function toneClass(v) { const n = Number(v || 0); return n > 0 ? 'tone-up' : n < 0 ? 'tone-down' : 'tone-flat' }
+function barWidth(v) { return `${Math.min(100, Math.max(6, Math.abs(Number(v || 0)) * 12))}%` }
+function barColor(v) { return Number(v || 0) >= 0 ? 'linear-gradient(90deg,#18b785,#5ee0b6)' : 'linear-gradient(90deg,#e94560,#ff9aa9)' }
 
 function formatDate(value) {
   if (!value) return ''
@@ -162,21 +226,46 @@ watch(() => route.query.date, load)
 </script>
 
 <style scoped>
-.page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
-.page-title { color: #1a1a2e; }
-.muted { color: #888; margin-top: 4px; }
-.actions { display: flex; gap: 10px; align-items: center; }
-.summary { font-size: 16px; line-height: 1.7; color: #333; }
-.flags { margin-top: 12px; display: grid; gap: 8px; }
-.flag { background: #fff7e6; border: 1px solid #ffd591; color: #8a5200; padding: 8px 10px; border-radius: 8px; }
-.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 16px 0; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
-.primary { background: #e94560; color: white; border: 0; border-radius: 10px; padding: 10px 16px; font-weight: 700; cursor: pointer; }
-.secondary { background: #fff; color: #e94560; border: 1px solid #ffd4dc; border-radius: 10px; padding: 9px 14px; font-weight: 700; text-decoration: none; }
-.primary:disabled { opacity: .6; cursor: wait; }
-.notice { margin-bottom: 16px; padding: 11px 14px; background: #f6f8ff; color: #526184; border: 1px solid #e4e9ff; border-radius: 10px; }
-.notice.error { background: #fff0f0; color: #bd3434; border-color: #ffd6d6; }
-.empty-state { padding: 28px; text-align: center; color: #888; background: #fafafa; border-radius: 10px; }
-.empty-state.small { padding: 18px; }
-@media (max-width: 900px) { .kpi-row, .grid-2 { grid-template-columns: 1fr; } .page-head { align-items: flex-start; gap: 12px; flex-direction: column; } }
+.today { max-width: 1480px; margin: 0 auto; }
+.hero { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; padding:26px; border-radius:24px; color:#fff; background: radial-gradient(circle at top left, #3f5efb 0, #1a1a2e 42%, #111827 100%); box-shadow:0 18px 48px rgba(17,24,39,.18); }
+.eyebrow { color:#a8c7ff; font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+.hero h1 { margin:8px 0 10px; font-size:32px; line-height:1.2; }
+.hero p { max-width:860px; margin:0; color:#dbeafe; line-height:1.8; }
+.actions { display:flex; gap:10px; align-items:center; flex-shrink:0; }
+.primary { background:#e94560; color:white; border:0; border-radius:12px; padding:11px 18px; font-weight:800; cursor:pointer; box-shadow:0 10px 28px rgba(233,69,96,.32); }
+.secondary { background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.28); border-radius:12px; padding:10px 16px; font-weight:800; text-decoration:none; }
+.primary:disabled { opacity:.6; cursor:wait; }
+.metric-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin:18px 0; }
+.metric-card { background:#fff; border-radius:20px; padding:20px; box-shadow:0 12px 30px rgba(15,23,42,.07); border:1px solid #eef2f7; position:relative; overflow:hidden; }
+.metric-card::after { content:''; position:absolute; inset:auto -30px -45px auto; width:120px; height:120px; border-radius:999px; opacity:.12; background:var(--accent); }
+.accent-red { --accent:#e94560; } .accent-green { --accent:#16c79a; } .accent-blue { --accent:#3f5efb; } .accent-orange { --accent:#f5a623; }
+.metric-label { color:#64748b; font-size:13px; font-weight:800; }
+.metric-main { margin-top:8px; color:#0f172a; font-size:30px; font-weight:900; }
+.metric-sub { margin-top:6px; color:#94a3b8; font-size:13px; }
+.notice { margin:16px 0; padding:12px 14px; background:#f6f8ff; color:#526184; border:1px solid #e4e9ff; border-radius:12px; }
+.notice.error { background:#fff0f0; color:#bd3434; border-color:#ffd6d6; }
+.risk-strip { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+.risk-chip { background:#fff7e6; border:1px solid #ffd591; color:#8a5200; padding:9px 12px; border-radius:999px; font-weight:700; }
+.layout-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+.layout-grid.three { grid-template-columns:1fr 1fr 1fr; }
+.signal-stack { display:grid; gap:12px; }
+.signal-item { display:flex; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid #f1f5f9; }
+.signal-item:last-child { border-bottom:none; }
+.signal-name { color:#64748b; }
+.tone-up { color:#16a06f; } .tone-down { color:#d93655; } .tone-flat { color:#64748b; } .tone-warn { color:#b7791f; }
+.sector-list { display:grid; gap:13px; }
+.sector-head { display:flex; justify-content:space-between; margin-bottom:7px; font-weight:800; color:#1f2937; }
+.bar { height:8px; background:#f1f5f9; border-radius:999px; overflow:hidden; }
+.bar span { display:block; height:100%; border-radius:999px; }
+.seat-cards { display:grid; gap:10px; }
+.seat-card { padding:12px; border:1px solid #eef2f7; border-radius:14px; background:#fbfdff; }
+.seat-title { display:flex; justify-content:space-between; gap:8px; font-weight:900; }
+.seat-title em { color:#94a3b8; font-style:normal; font-size:12px; }
+.seat-main { margin-top:8px; font-size:22px; font-weight:900; }
+.seat-sub { margin-top:4px; color:#64748b; font-size:12px; }
+.empty-state { padding:28px; text-align:center; color:#888; background:#fafafa; border-radius:14px; }
+.empty-state.large { margin:18px 0; padding:48px; }
+.empty-state.small { padding:18px; }
+@media (max-width: 1100px) { .metric-grid, .layout-grid, .layout-grid.three { grid-template-columns:1fr 1fr; } }
+@media (max-width: 760px) { .hero { flex-direction:column; } .metric-grid, .layout-grid, .layout-grid.three { grid-template-columns:1fr; } .hero h1 { font-size:26px; } }
 </style>

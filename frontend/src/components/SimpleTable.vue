@@ -8,7 +8,7 @@
       </thead>
       <tbody>
         <tr v-for="(row, i) in data" :key="i">
-          <td v-for="(val, j) in row" :key="j">{{ val }}</td>
+          <td v-for="(val, j) in row" :key="j" :class="valueClass(val)">{{ val }}</td>
         </tr>
         <tr v-if="!data || data.length === 0">
           <td :colspan="columns.length" class="empty">暂无数据</td>
@@ -23,31 +23,22 @@ defineProps({
   columns: { type: Array, default: () => [] },
   data: { type: Array, default: () => [] },
 })
+function valueClass(v) {
+  const s = String(v ?? '')
+  if (/^\+/.test(s) || /^ok$/i.test(s)) return 'positive'
+  if (/^-/.test(s) || /missing|fail|error|缺失/i.test(s)) return 'negative'
+  return ''
+}
 </script>
 
 <style scoped>
-.simple-table table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-.simple-table th {
-  background: #fafafa;
-  padding: 10px 12px;
-  text-align: left;
-  font-weight: 600;
-  color: #555;
-  border-bottom: 2px solid #eee;
-}
-.simple-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid #f5f5f5;
-  color: #333;
-}
-.simple-table tr:last-child td { border-bottom: none; }
-.simple-table .empty {
-  text-align: center;
-  color: #aaa;
-  padding: 24px;
-}
+.simple-table { width:100%; overflow:auto; }
+.simple-table table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; min-width:620px; }
+.simple-table th { position:sticky; top:0; z-index:1; background:#f8fafc; padding:11px 12px; text-align:left; font-weight:900; color:#475569; border-bottom:1px solid #e2e8f0; white-space:nowrap; }
+.simple-table td { padding:11px 12px; border-bottom:1px solid #f1f5f9; color:#1f2937; white-space:nowrap; }
+.simple-table tbody tr:hover td { background:#fbfdff; }
+.simple-table tr:last-child td { border-bottom:none; }
+.simple-table .empty { text-align:center; color:#94a3b8; padding:28px; }
+.positive { color:#12966b !important; font-weight:800; }
+.negative { color:#d93655 !important; font-weight:800; }
 </style>
