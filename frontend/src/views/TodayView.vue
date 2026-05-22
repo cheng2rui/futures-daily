@@ -96,6 +96,7 @@ import api from '../api.js'
 import BaseChart from '../components/BaseChart.vue'
 import SectionCard from '../components/SectionCard.vue'
 import SimpleTable from '../components/SimpleTable.vue'
+import { exchangeName } from '../exchange.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -111,8 +112,8 @@ const watchRows = computed(() => rows(report.value.watch_symbols).slice(0, 14))
 const breadthRows = computed(() => (report.value.structure?.sector_breadth || []).map(x => [x.name, x.count, x.up, x.down, `${x.up_ratio}%`, fmtNum(x.volume), fmtNum(x.open_interest)]))
 const gainerRows = computed(() => rows(report.value.rankings?.gainers))
 const loserRows = computed(() => rows(report.value.rankings?.losers))
-const seatSignalCards = computed(() => (report.value.seats?.archive?.net_delta_top || []).slice(0, 6).map(x => ({ exchange: x.exchange, name: x.displayName || x.name, netDelta: x.netDelta, longShortRatio: x.longShortRatio, netDir: x.netDir })))
-const qualityRows = computed(() => (report.value.data_quality?.exchanges || []).map(x => [x.exchange, x.status, x.daily?.rows ?? 0, x.seat_rank?.rows ?? 0, x.daily?.error || x.seat_rank?.error || '-']))
+const seatSignalCards = computed(() => (report.value.seats?.archive?.net_delta_top || []).slice(0, 6).map(x => ({ exchange: exchangeName(x.exchange), name: x.displayName || x.name, netDelta: x.netDelta, longShortRatio: x.longShortRatio, netDir: x.netDir })))
+const qualityRows = computed(() => (report.value.data_quality?.exchanges || []).map(x => [exchangeName(x.exchange), x.status, x.daily?.rows ?? 0, x.seat_rank?.rows ?? 0, x.daily?.error || x.seat_rank?.error || '-']))
 const sectorStrengthTop = computed(() => [...(report.value.sectors || [])].sort((a, b) => Math.abs(Number(b.avg_change || 0)) - Math.abs(Number(a.avg_change || 0))).slice(0, 8))
 const sectorBreadth = computed(() => report.value.structure?.sector_breadth || [])
 const qualityOkText = computed(() => { const q = report.value.data_quality; if (!q || q.status === 'empty') return '暂无质量数据'; const bad = (q.exchanges || []).filter(x => x.status !== 'ok').length; return bad ? `${bad} 个交易所需关注` : '覆盖良好' })
@@ -123,7 +124,7 @@ const marketSignals = computed(() => [
   { label: '席位关注', value: seatSignalCards.value[0] ? `${seatSignalCards.value[0].name} ${fmtSigned(seatSignalCards.value[0].netDelta)}` : '-', tone: 'tone-warn' },
 ])
 const activeSector = computed(() => { const x = [...sectorBreadth.value].sort((a, b) => Number(b.volume || 0) - Number(a.volume || 0))[0]; return x ? `${x.name} ${fmtNum(x.volume)}` : '-' })
-const sourceTip = computed(() => { const quality = report.value.data_quality; if (!quality || quality.status === 'empty') return ''; const bad = (quality.exchanges || []).filter(x => x.status !== 'ok'); if (!bad.length) return `数据来源：交易所/AKShare/增强源，覆盖 ${quality.coverage_pct ?? 0}%。`; return `数据来源提示：${bad.map(x => `${x.exchange} ${x.status}`).join('、')}；部分交易所可能使用 fallback 或暂无数据。` })
+const sourceTip = computed(() => { const quality = report.value.data_quality; if (!quality || quality.status === 'empty') return ''; const bad = (quality.exchanges || []).filter(x => x.status !== 'ok'); if (!bad.length) return `数据来源：交易所/AKShare/增强源，覆盖 ${quality.coverage_pct ?? 0}%。`; return `数据来源提示：${bad.map(x => `${exchangeName(x.exchange)} ${x.status}`).join('、')}；部分交易所可能使用 fallback 或暂无数据。` })
 const reportSections = computed(() => report.value.report_sections || [])
 
 const sectorVolumeOption = computed(() => barOption({ names: sectorBreadth.value.map(x => x.name), series: [
@@ -135,7 +136,7 @@ const longSeatOption = computed(() => horizontalBarOption((report.value.seats?.l
 const shortSeatOption = computed(() => horizontalBarOption((report.value.seats?.short_increase_top || []).slice(0, 10).map(x => ({ name: `${x.variety} ${x.seat}`, value: Number(x.change || 0) })), '#e94560'))
 
 function emptyReport() { return { overview: {}, market: {}, meta: {}, sectors: [], rankings: {}, data_quality: {}, watch_symbols: [], risk_flags: [] } }
-function rows(items = []) { return (items || []).map(x => [x.exchange, x.symbol, x.contract, x.sector, x.close ?? '-', x.change_pct == null ? '-' : signedPct(x.change_pct)]) }
+function rows(items = []) { return (items || []).map(x => [exchangeName(x.exchange), x.symbol, x.contract, x.sector, x.close ?? '-', x.change_pct == null ? '-' : signedPct(x.change_pct)]) }
 function signedPct(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}%` : `${v}%` }
 function fmtSigned(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}` : `${v}` }
 function fmtNum(value) { if (value == null) return '-'; const n = Number(value); if (!Number.isFinite(n)) return value; if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(2)}亿`; if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`; return n.toFixed(0) }

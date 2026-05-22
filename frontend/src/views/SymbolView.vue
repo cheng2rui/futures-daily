@@ -20,7 +20,7 @@
       <div v-else-if="!bars.length" class="empty-state">暂无 {{ symbol }} 日行情。可先生成日报或检查该品种是否已采集。</div>
       <div v-else class="info-grid">
         <div class="info-item"><label>最新交易日</label><span>{{ latest.trade_date }}</span></div>
-        <div class="info-item"><label>交易所</label><span>{{ latest.exchange || '-' }}</span></div>
+        <div class="info-item"><label>交易所</label><span>{{ exchangeName(latest.exchange) }}</span></div>
         <div class="info-item"><label>最低价</label><span>{{ fmt(stats.low) }}</span></div>
         <div class="info-item"><label>累计持仓</label><span>{{ fmt(stats.openInterest) }}</span></div>
       </div>
@@ -39,6 +39,7 @@ import api from '../api.js'
 import KpiCard from '../components/KpiCard.vue'
 import SectionCard from '../components/SectionCard.vue'
 import SimpleTable from '../components/SimpleTable.vue'
+import { exchangeName } from '../exchange.js'
 
 const route = useRoute()
 const bars = ref([])
@@ -49,7 +50,7 @@ const columns = ['日期', '交易所', '合约', '开盘', '最高', '最低', 
 
 const rows = computed(() => bars.value.map(x => [
   x.trade_date,
-  x.exchange,
+  exchangeName(x.exchange),
   x.contract,
   fmt(x.open),
   fmt(x.high),

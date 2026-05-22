@@ -16,7 +16,7 @@
         </form>
         <div class="list">
           <div v-for="x in symbols" :key="x.id" class="item">
-            <div><b>{{ x.symbol }}</b> <span>{{ x.exchange || '-' }}</span> <span>{{ x.name || '-' }}</span></div>
+            <div><b>{{ x.symbol }}</b> <span>{{ exchangeName(x.exchange) }}</span> <span>{{ x.name || '-' }}</span></div>
             <button class="danger" @click="deleteSymbol(x.id)">删除</button>
           </div>
           <div v-if="!symbols.length" class="empty">暂无自选品种</div>
@@ -46,6 +46,7 @@ import { computed, onMounted, ref } from 'vue'
 import api from '../api.js'
 import SectionCard from '../components/SectionCard.vue'
 import SimpleTable from '../components/SimpleTable.vue'
+import { exchangeName } from '../exchange.js'
 
 const settings = ref({})
 const symbols = ref([])
@@ -55,7 +56,7 @@ const seatForm = ref({ seat_name: '', alias: '' })
 
 const settingsRows = computed(() => [
   ['端口', settings.value.server?.port ?? '-'],
-  ['交易所', (settings.value.exchanges?.enabled || []).join(', ')],
+  ['交易所', (settings.value.exchanges?.enabled || []).map(exchangeName).join('、')],
   ['定时任务', settings.value.scheduler?.daily_report_cron || '-'],
   ['通知 Telegram', settings.value.notify?.telegram?.enabled ? '启用' : '关闭'],
   ['智能助手', settings.value.assistant?.enabled ? '启用' : '预留/关闭'],
