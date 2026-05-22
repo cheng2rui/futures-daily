@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Contract, DailyBar, JobRun, WatchSymbol
+from app.metadata.variety_meta import get_variety_name
 from app.services.collector import collect_daily_market
 from app.services.structure import sector_for
 from app.services.trading_day import normalize_trade_date
@@ -57,7 +58,7 @@ def _bar_payload(bar: DailyBar, meta: dict[tuple[str, str], Contract]) -> dict:
         "trade_date": bar.trade_date,
         "exchange": bar.exchange,
         "symbol": bar.symbol,
-        "name": contract.name if contract else "",
+        "name": contract.name if contract and contract.name else get_variety_name(bar.symbol),
         "sector": contract.sector if contract and contract.sector else sector_for(bar.symbol),
         "contract": bar.contract,
         "open": bar.open,
