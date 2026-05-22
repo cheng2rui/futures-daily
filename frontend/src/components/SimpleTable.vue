@@ -25,8 +25,10 @@ defineProps({
 })
 function valueClass(v) {
   const s = String(v ?? '')
-  if (/^\+/.test(s) || /正常|成功|已解决/.test(s)) return 'positive'
-  if (/^-/.test(s) || /缺失|失败|错误|待处理/.test(s)) return 'negative'
+  if (/^\+/.test(s)) return 'market-up'
+  if (/^-/.test(s)) return 'market-down'
+  if (/正常|成功|已解决/.test(s)) return 'status-positive'
+  if (/缺失|失败|错误|待处理/.test(s)) return 'status-negative'
   return ''
 }
 </script>
@@ -39,6 +41,8 @@ function valueClass(v) {
 .simple-table tbody tr:hover td { background:#fbfdff; }
 .simple-table tr:last-child td { border-bottom:none; }
 .simple-table .empty { text-align:center; color:#94a3b8; padding:28px; }
-.positive { color:#12966b !important; font-weight:800; }
-.negative { color:#d93655 !important; font-weight:800; }
+.market-up { color:#d93655 !important; font-weight:800; }
+.market-down { color:#12966b !important; font-weight:800; }
+.status-positive { color:#12966b !important; font-weight:800; }
+.status-negative { color:#d93655 !important; font-weight:800; }
 </style>

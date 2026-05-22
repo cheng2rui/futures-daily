@@ -13,6 +13,6 @@ services:
     environment:
       - FUTURES_DAILY_CONFIG=/app/config/config.yaml
       - FUTURES_DAILY_DB=/app/data/futures_daily.db
-      - no_proxy=*
-      - NO_PROXY=*
+      - no_proxy=localhost,127.0.0.1,::1,dce.com.cn,www.dce.com.cn,.dce.com.cn,*.dce.com.cn
+      - NO_PROXY=localhost,127.0.0.1,::1,dce.com.cn,www.dce.com.cn,.dce.com.cn,*.dce.com.cn
     restart: unless-stopped

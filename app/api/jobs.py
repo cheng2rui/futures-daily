@@ -22,6 +22,7 @@ def list_jobs(limit: int = 50, db: Session = Depends(get_db)):
             "started_at": r.started_at,
             "finished_at": r.finished_at,
             "message": r.message,
+            "result_json": r.result_json,
         }
         for r in rows
     ]

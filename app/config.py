@@ -45,6 +45,11 @@ class NotifyChannelConfig(BaseModel):
     enabled: bool = False
     bot_token: str = ""
     chat_id: str = ""
+    webhook_url: str = ""
+    msg_type: str = "text"
+    token: str = ""
+    claw_base_url: str = "https://ilinkai.weixin.qq.com"
+    claw_target: str = ""
 
 
 class NotifyConfig(BaseModel):

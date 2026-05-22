@@ -31,8 +31,16 @@ notify:
     chat_id: ""
   wecom:
     enabled: false
+    webhook_url: ""
   wechatbot:
     enabled: false
+    # 旧模式：自建 WeChatBot / 微信转发器 webhook。
+    webhook_url: ""
+    # Claw/iLink 直连模式：留空 webhook_url，填写 token + 目标。
+    token: ""
+    claw_base_url: "https://ilinkai.weixin.qq.com"
+    chat_id: ""
+    claw_target: ""
 
 assistant:
   enabled: false

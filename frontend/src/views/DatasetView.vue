@@ -82,7 +82,7 @@ const varietyRows = computed(() => filteredRows.value.map(x => [
   x.symbol,
   x.name,
   contractName(x.main_contract, x.symbol),
-  x.main_change_pct == null ? '-' : `${x.main_change_pct}%`,
+  x.main_change_pct == null ? '-' : signedPct(x.main_change_pct),
   fmtNum(x.total_volume),
   fmtNum(x.total_open_interest),
   qualityValue(x, 'seat_rank'),
@@ -119,7 +119,7 @@ function fmtPct(v) {
   if (v == null) return '-'
   const n = Number(v)
   if (!Number.isFinite(n)) return v
-  return `${n}%`
+  return n > 0 ? `+${n}%` : `${n}%`
 }
 
 function fmtNum(v) {
@@ -130,6 +130,7 @@ function fmtNum(v) {
   return n.toFixed(0)
 }
 function fmtSigned(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}` : `${v}` }
+function signedPct(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}%` : `${v}%` }
 
 async function load() {
   loading.value = true

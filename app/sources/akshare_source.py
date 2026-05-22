@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
+import os
 from typing import Any, Callable
 
 import pandas as pd
@@ -13,6 +15,34 @@ from app.sources.dce_fallback_source import (
 
 EXCHANGES = ["DCE", "CZCE", "SHFE", "CFFEX", "GFEX", "INE"]
 INE_VARIETIES = {"SC", "NR", "LU", "BC", "EC"}
+DCE_NO_PROXY_HOSTS = "dce.com.cn,www.dce.com.cn,.dce.com.cn,*.dce.com.cn"
+
+
+@contextmanager
+def dce_direct_network():
+    """Force DCE official-site calls to bypass proxy env vars.
+
+    DCE frequently returns WAF/precondition errors and is sensitive to proxy
+    egress. Keep this scoped to DCE calls so other data sources keep their
+    normal network behaviour.
+    """
+    keys = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy", "NO_PROXY", "no_proxy"]
+    old = {key: os.environ.get(key) for key in keys}
+    try:
+        for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
+            os.environ.pop(key, None)
+        existing = [x.strip() for x in (old.get("NO_PROXY") or old.get("no_proxy") or "").split(",") if x.strip()]
+        direct_hosts = [x for x in DCE_NO_PROXY_HOSTS.split(",") if x not in existing]
+        no_proxy = ",".join(existing + direct_hosts)
+        os.environ["NO_PROXY"] = no_proxy
+        os.environ["no_proxy"] = no_proxy
+        yield
+    finally:
+        for key, value in old.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 @dataclass(frozen=True)
@@ -69,11 +99,12 @@ class AkShareSource:
         exchange = exchange.upper()
         try:
             if exchange == "DCE":
-                df = _call_with_retry(lambda: self.ak.get_dce_daily(date=trade_date))
-                if df is not None and not df.empty:
-                    return FetchResult(exchange=exchange, kind="daily", rows=_records(df))
-                # DCE official API returned empty; try Sina fallback
-                fallback = fetch_dce_daily_from_sina(trade_date)
+                with dce_direct_network():
+                    df = _call_with_retry(lambda: self.ak.get_dce_daily(date=trade_date))
+                    if df is not None and not df.empty:
+                        return FetchResult(exchange=exchange, kind="daily", rows=_records(df))
+                    # DCE official API returned empty; try Sina fallback
+                    fallback = fetch_dce_daily_from_sina(trade_date)
                 return FetchResult(
                     exchange=exchange,
                     kind="daily",
@@ -100,7 +131,8 @@ class AkShareSource:
         except Exception as exc:  # noqa: BLE001
             # For DCE, try Sina fallback on any error (e.g. JSONDecodeError, HTTP 412)
             if exchange == "DCE":
-                fallback = fetch_dce_daily_from_sina(trade_date)
+                with dce_direct_network():
+                    fallback = fetch_dce_daily_from_sina(trade_date)
                 fallback_note = "used Sina fallback" if fallback.rows else "Sina fallback unavailable"
                 error = fallback.error or f"{type(exc).__name__}: {exc}; {fallback_note}"
                 return FetchResult(exchange=exchange, kind="daily", rows=fallback.rows, error=error)
@@ -110,16 +142,17 @@ class AkShareSource:
         exchange = exchange.upper()
         try:
             if exchange == "DCE":
-                data = self.ak.get_dce_rank_table(date=trade_date)
-                # get_dce_rank_table returns {} for recent dates (DCE site issue)
-                if isinstance(data, dict) and not data:
-                    fallback = fetch_dce_seat_rank_from_sina(trade_date)
-                    return FetchResult(
-                        exchange=exchange,
-                        kind="seat_rank",
-                        rows=[],
-                        error=fallback.error,
-                    )
+                with dce_direct_network():
+                    data = self.ak.get_dce_rank_table(date=trade_date)
+                    # get_dce_rank_table returns {} for recent dates (DCE site issue)
+                    if isinstance(data, dict) and not data:
+                        fallback = fetch_dce_seat_rank_from_sina(trade_date)
+                        return FetchResult(
+                            exchange=exchange,
+                            kind="seat_rank",
+                            rows=[],
+                            error=fallback.error,
+                        )
             elif exchange == "CZCE":
                 data = self.ak.get_rank_table_czce(date=trade_date)
             elif exchange == "SHFE":

@@ -12,11 +12,19 @@ from app.services.normalizer import normalize_daily_row, normalize_seat_row
 from app.sources.akshare_source import AkShareSource
 
 
-def collect_daily_market(db: Session, trade_date: str | None = None) -> dict:
+def _enabled_exchanges(exchanges: list[str] | tuple[str, ...] | None = None) -> list[str]:
+    enabled = [str(x).upper() for x in get_settings().exchanges.enabled]
+    if not exchanges:
+        return enabled
+    requested = [str(x).upper() for x in exchanges]
+    return [x for x in requested if x in enabled]
+
+
+def collect_daily_market(db: Session, trade_date: str | None = None, exchanges: list[str] | tuple[str, ...] | None = None) -> dict:
     trade_date = trade_date or date.today().strftime("%Y%m%d")
     source = AkShareSource()
     results = []
-    for exchange in get_settings().exchanges.enabled:
+    for exchange in _enabled_exchanges(exchanges):
         run = start_crawler_run(db, trade_date, exchange, "daily")
         db.execute(delete(DailyBar).where(DailyBar.trade_date == trade_date, DailyBar.exchange == exchange))
         result = source.fetch_daily(trade_date, exchange)
@@ -50,11 +58,11 @@ def collect_daily_market(db: Session, trade_date: str | None = None) -> dict:
     return {"trade_date": trade_date, "results": results}
 
 
-def collect_seat_ranks(db: Session, trade_date: str | None = None) -> dict:
+def collect_seat_ranks(db: Session, trade_date: str | None = None, exchanges: list[str] | tuple[str, ...] | None = None) -> dict:
     trade_date = trade_date or date.today().strftime("%Y%m%d")
     source = AkShareSource()
     results = []
-    for exchange in get_settings().exchanges.enabled:
+    for exchange in _enabled_exchanges(exchanges):
         run = start_crawler_run(db, trade_date, exchange, "seat_rank")
         db.execute(delete(SeatRankRow).where(SeatRankRow.trade_date == trade_date, SeatRankRow.exchange == exchange))
         result = source.fetch_seat_rank(trade_date, exchange)

@@ -2,6 +2,7 @@ export const STATUS_LABELS = {
   ok: '正常',
   missing: '缺失',
   partial: '部分覆盖',
+  unrecoverable: '不可恢复',
   failed: '失败',
   open: '待处理',
   resolved: '已解决',

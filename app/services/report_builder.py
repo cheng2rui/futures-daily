@@ -13,13 +13,15 @@ from app.models import DailyBar, Report, SeatRankRow, WatchSymbol, SeatWatchlist
 from app.services.data_mart import build_variety_dataset, materialize_variety_dataset
 from app.services.data_quality import build_data_quality
 from app.services.gap_analysis import build_gap_analysis
+from app.services.news_collector import load_latest_news_digest
+from app.services.push_digest import build_push_digest
 from app.services.seat_archive import load_archive_summary
 from app.services.structure import build_structure, pct_change, sector_for
 
 
 from app.version import VERSION
 
-REPORT_SCHEMA_VERSION = 3
+REPORT_SCHEMA_VERSION = 4
 LIQUID_MIN_VOLUME = 1000
 LIQUID_MIN_OPEN_INTEREST = 1000
 
@@ -114,6 +116,10 @@ def build_report(db: Session, trade_date: str) -> Report:
         if r.long_party_name in watch_seat_names or r.short_party_name in watch_seat_names or r.vol_party_name in watch_seat_names
     ][:50]
 
+    news_digest = load_latest_news_digest(db, trade_date)
+    abnormal_cards = build_abnormal_cards(dataset, news_digest=news_digest)
+    watch_digest = build_watch_digest(dataset, watch_symbols, abnormal_cards, news_digest)
+    tomorrow_watch = build_tomorrow_watch(abnormal_cards, data_quality, gap_analysis, news_digest)
     report_sections = build_report_sections(
         up_count=up_count,
         down_count=down_count,
@@ -126,12 +132,18 @@ def build_report(db: Session, trade_date: str) -> Report:
         gap_analysis=gap_analysis,
         seat_long=seat_long,
         seat_short=seat_short,
+        abnormal_cards=abnormal_cards,
     )
     report_brief = build_report_brief(report_sections, stage, score)
 
     payload = {
         "date": trade_date,
-        "meta": {"generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "version": VERSION, "report_schema_version": REPORT_SCHEMA_VERSION},
+        "meta": {
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "version": VERSION,
+            "report_schema_version": REPORT_SCHEMA_VERSION,
+            "product_positioning": "不做实时行情交易终端，只做盘后/阶段性资讯收集、数据拆解、异动归因和市场日报。",
+        },
         "overview": {
             "score": score,
             "stage": stage,
@@ -165,11 +177,20 @@ def build_report(db: Session, trade_date: str) -> Report:
                 reverse=True,
             )[:10],
         },
+        "intelligence": {
+            "positioning": "日报型市场情报：收集资讯与数据，拆解异动原因，帮助投资者第一时间理解全市场情况；不替代实时行情软件，不构成交易建议。",
+            "abnormal_cards": abnormal_cards,
+            "tomorrow_watch": tomorrow_watch,
+            "news_digest": news_digest,
+            "watch_digest": watch_digest,
+        },
         "risk_flags": quality_flags(data_quality),
         "report_brief": report_brief,
         "report_sections": report_sections,
         "action_notes": build_action_notes(gap_analysis),
     }
+
+    payload["push_digest"] = build_push_digest(payload)
 
     report = db.scalar(select(Report).where(Report.trade_date == trade_date))
     if not report:
@@ -214,17 +235,21 @@ def build_report_sections(
     gap_analysis: dict,
     seat_long: list[SeatRankRow],
     seat_short: list[SeatRankRow],
+    abnormal_cards: list[dict] | None = None,
 ) -> list[dict]:
     breadth = structure.get("sector_breadth") or []
     active = sorted(breadth, key=lambda x: x.get("volume") or 0, reverse=True)[:3]
     active_text = "、".join(f"{x.get('name')}成交{human_num(x.get('volume'))}" for x in active) or "暂无明显活跃板块"
+    abnormal_cards = abnormal_cards or []
+    abnormal_top = "、".join(f"{x.get('name') or x.get('symbol')}：{x.get('signal')}" for x in abnormal_cards[:3]) or "暂无显著异动卡片"
     archive_top = (seat_archive.get("net_delta_top") or [])[:3]
     archive_text = "、".join(f"{x.get('displayName') or x.get('name')}净变{signed_num(x.get('netDelta'))}" for x in archive_top) or "结构化席位信号暂不突出"
     long_text = "、".join(f"{r.variety}{r.long_party_name}+{human_num(r.long_open_interest_chg)}" for r in seat_long[:3]) or "多头增仓信号不足"
     short_text = "、".join(f"{r.variety}{r.short_party_name}+{human_num(r.short_open_interest_chg)}" for r in seat_short[:3]) or "空头增仓信号不足"
     actionable = gap_analysis.get("actionable_count", 0)
     explained = gap_analysis.get("explained_count", 0)
-    coverage = data_quality.get("coverage_pct", 0)
+    coverage = data_quality.get("overall_coverage_pct", data_quality.get("coverage_pct", 0))
+    quality_summary = data_quality.get("summary") or f"基础数据覆盖率 {coverage}%"
     dataset_count = dataset.get("count", 0)
 
     return [
@@ -239,6 +264,11 @@ def build_report_sections(
             "body": f"从席位与成交结构看，重点关注两条线：一是成交/持仓集中的活跃板块；二是结构化席位净变化靠前的品种。当前结构信号：{archive_text}。多头增仓靠前：{long_text}。",
         },
         {
+            "title": "异动拆解",
+            "tone": "info",
+            "body": f"日报重点不替代实时行情，而是把价格、持仓、仓单/库存、席位和资讯线索汇总为观察清单。当前优先观察：{abnormal_top}。",
+        },
+        {
             "title": "风险提示",
             "tone": "warning",
             "body": f"空头增仓与结构信号需要同步观察，避免只看成交热度。当前空头增仓靠前：{short_text}。若板块成交放大但结构席位方向不一致，应优先按分化行情处理。",
@@ -246,9 +276,312 @@ def build_report_sections(
         {
             "title": "数据可信度",
             "tone": "info" if actionable == 0 else "warning",
-            "body": f"本次品种级数据集覆盖 {dataset_count} 个品种，基础数据覆盖率 {coverage}%。数据缺口共 {gap_analysis.get('count', 0)} 条，其中可行动缺口 {actionable} 条、已解释缺口 {explained} 条。当前结论适合作为盘后复盘和次日观察清单，不应单独作为交易依据。",
+            "body": f"本次品种级数据集覆盖 {dataset_count} 个品种；{quality_summary}。数据缺口共 {gap_analysis.get('count', 0)} 条，其中可行动缺口 {actionable} 条、已解释缺口 {explained} 条。当前结论适合作为盘后复盘和次日观察清单，不应单独作为交易依据。",
         },
     ]
+
+
+
+def build_abnormal_cards(dataset: dict, limit: int = 12, news_digest: dict | None = None) -> list[dict]:
+    """Build explainable variety-level abnormal cards for the daily intelligence view.
+
+    The card is a reading priority, not a trading signal. It rewards facts that
+    make a variety worth opening in the daily report: large price move, high
+    participation, seat divergence, warehouse/basis pressure, and capital flow.
+    """
+    news_by_symbol = index_news_by_symbol((news_digest or {}).get("items") or [])
+    viewpoints_by_symbol = {str(v.get("symbol") or "").upper(): v for v in (news_digest or {}).get("viewpoints") or []}
+    cards = []
+    for row in dataset.get("rows", []) or []:
+        chg = safe_num(row.get("main_change_pct"))
+        volume = safe_num(row.get("total_volume") or row.get("main_volume"))
+        oi = safe_num(row.get("total_open_interest") or row.get("main_open_interest"))
+        archive = row.get("archive_signal") or {}
+        seat = row.get("seat") or {}
+        external = row.get("external_signals") or {}
+        warehouse = external.get("warehouse_receipt") or {}
+        basis = external.get("basis") or {}
+        capital = external.get("capital_flow") or {}
+        net_delta = safe_num(archive.get("netDelta") if archive else seat.get("net_delta_top20"))
+        long_short_ratio = safe_num(archive.get("longShortRatio")) if archive else None
+        warehouse_delta = safe_num(warehouse.get("increase_number"))
+        warehouse_ratio = safe_num(warehouse.get("increase_ratio"))
+        basis_rate = safe_num(basis.get("basis_rate"))
+        capital_yi = safe_num(capital.get("amount_yi"))
+
+        symbol = str(row.get("symbol") or "").upper()
+        related_news = news_by_symbol.get(symbol, [])[:3]
+        viewpoint = viewpoints_by_symbol.get(symbol)
+        dimensions = score_dimensions(chg, volume, oi, net_delta, long_short_ratio, warehouse_delta, warehouse_ratio, basis_rate, capital_yi, len(related_news))
+        score = sum(x["score"] for x in dimensions)
+        if score <= 0:
+            continue
+        signal, bias = classify_abnormal_signal(chg, net_delta, warehouse_delta, basis_rate)
+        reasons = build_reasons(chg, net_delta, long_short_ratio, warehouse_delta, warehouse_ratio, basis_rate, capital_yi)
+        cards.append({
+            "exchange": row.get("exchange"),
+            "symbol": row.get("symbol"),
+            "name": row.get("name"),
+            "sector": row.get("sector"),
+            "main_contract": row.get("main_contract"),
+            "score": round(score, 2),
+            "bias": bias,
+            "signal": signal,
+            "reasons": reasons[:6],
+            "dimensions": dimensions,
+            "watch_next": build_watch_next(chg, net_delta, warehouse_delta, basis_rate, related_news),
+            "related_news": related_news,
+            "news_viewpoint": viewpoint,
+            "source_quality": row.get("quality") or {},
+        })
+    cards.sort(key=lambda x: x["score"], reverse=True)
+    return cards[:limit]
+
+
+def score_dimensions(chg, volume, oi, net_delta, long_short_ratio, warehouse_delta, warehouse_ratio, basis_rate, capital_yi, news_count: int = 0) -> list[dict]:
+    dims = []
+    def add(name: str, value, score: float, note: str):
+        if score > 0:
+            dims.append({"name": name, "value": value, "score": round(score, 2), "note": note})
+    add("价格波动", chg, min(abs(chg or 0) * 2.2, 18), "主力合约涨跌幅越大，越需要解释")
+    add("成交活跃", volume, min((volume or 0) / 1_000_000, 8), "成交放大代表市场关注度")
+    add("持仓规模", oi, min((oi or 0) / 500_000, 8), "持仓规模大，后续影响更广")
+    add("席位净变化", net_delta, min(abs(net_delta or 0) / 10_000, 14), "席位净多/净空变化提供结构线索")
+    if long_short_ratio is not None:
+        add("多空比极值", long_short_ratio, min(abs(long_short_ratio - 1) * 5, 8), "多空比偏离 1 越多，结构越极端")
+    add("仓单变化", warehouse_delta, min(abs(warehouse_delta or 0) / 1000, 10), "仓单变化可解释供需边际变化")
+    add("仓单变动率", warehouse_ratio, min(abs(warehouse_ratio or 0) * 0.4, 8), "仓单变动率用于发现小品种突变")
+    add("基差偏离", basis_rate, min(abs(basis_rate or 0) * 0.8, 8), "基差偏离提示现货/期货矛盾")
+    add("沉淀资金", capital_yi, min(abs(capital_yi or 0) * 1.1, 8), "资金沉淀越大，品种关注度越高")
+    add("资讯热度", news_count, min((news_count or 0) * 2.5, 8), "相关新闻越多，越需要结合事件解释")
+    dims.sort(key=lambda x: x["score"], reverse=True)
+    return dims[:5]
+
+
+def classify_abnormal_signal(chg, net_delta, warehouse_delta, basis_rate) -> tuple[str, str]:
+    c = chg or 0
+    n = net_delta or 0
+    w = warehouse_delta or 0
+    b = basis_rate or 0
+    if c >= 1 and n > 0:
+        return "上涨 + 席位净多增加，偏主动多头线索", "positive"
+    if c >= 1 and n < 0:
+        return "上涨但席位净变化偏空，可能存在分歧", "mixed"
+    if c <= -1 and n < 0:
+        return "下跌 + 席位净空增加，偏空头增仓线索", "negative"
+    if c <= -1 and n > 0:
+        return "下跌但席位净变化偏多，需防分歧/换手", "mixed"
+    if w < 0 and c >= 0:
+        return "仓单下降且价格不弱，关注供应收紧验证", "positive"
+    if w > 0 and c <= 0:
+        return "仓单增加且价格偏弱，关注库存压力", "negative"
+    if abs(b) >= 3:
+        return "基差偏离较大，关注期现修复", "mixed"
+    if abs(c) >= 1:
+        return "价格异动，等待持仓/仓单/资讯确认", "mixed"
+    return "结构活跃，适合列入次日观察", "neutral"
+
+
+def build_reasons(chg, net_delta, long_short_ratio, warehouse_delta, warehouse_ratio, basis_rate, capital_yi) -> list[str]:
+    reasons = []
+    if chg is not None:
+        reasons.append(f"主力涨跌{signed_pct(chg)}")
+    if net_delta is not None:
+        reasons.append(f"席位净变化{signed_num(net_delta)}")
+    if long_short_ratio is not None:
+        reasons.append(f"多空比{long_short_ratio:.2f}")
+    if warehouse_delta is not None:
+        text = f"仓单变化{signed_num(warehouse_delta)}"
+        if warehouse_ratio is not None:
+            text += f"（{signed_pct(warehouse_ratio)}）"
+        reasons.append(text)
+    if basis_rate is not None:
+        reasons.append(f"基差率{signed_pct(basis_rate)}")
+    if capital_yi is not None:
+        reasons.append(f"沉淀资金约{capital_yi:.2f}亿")
+    return reasons or ["价格/持仓/外部数据出现可观察变化"]
+
+
+
+def build_watch_digest(dataset: dict, watch_symbols: list[WatchSymbol], abnormal_cards: list[dict], news_digest: dict | None = None) -> dict:
+    """Build a focused daily report for the user's watchlist varieties."""
+    default_watch_codes = ["TA", "RU", "PX", "JD", "CJ", "A", "NI", "RB", "PB"]
+    configured_codes = [w.symbol.upper() for w in watch_symbols if getattr(w, "enabled", True)]
+    # Merge configured watchlist with Rey's current futures-panel watch pool so
+    # the digest stays useful even before the settings page is fully populated.
+    watch_codes = list(dict.fromkeys([*configured_codes, *default_watch_codes]))
+    rows_by_symbol = {str(r.get("symbol") or "").upper(): r for r in dataset.get("rows", []) or []}
+    cards_by_symbol = {str(c.get("symbol") or "").upper(): c for c in abnormal_cards or []}
+    viewpoints_by_symbol = {str(v.get("symbol") or "").upper(): v for v in (news_digest or {}).get("viewpoints") or []}
+    news_by_symbol = index_news_by_symbol((news_digest or {}).get("items") or [])
+    items = []
+    for symbol in watch_codes:
+        row = rows_by_symbol.get(symbol)
+        card = cards_by_symbol.get(symbol)
+        viewpoint = viewpoints_by_symbol.get(symbol)
+        if not row and not card and not viewpoint:
+            items.append({
+                "symbol": symbol,
+                "name": get_variety_name(symbol),
+                "status": "missing",
+                "summary": "暂无当日数据，需等待采集或检查数据源覆盖。",
+                "watch_next": "复核行情、席位和增强源是否覆盖该品种。",
+            })
+            continue
+        external = (row or {}).get("external_signals") or {}
+        seat = (row or {}).get("seat") or {}
+        archive = (row or {}).get("archive_signal") or {}
+        chg = safe_num((row or {}).get("main_change_pct"))
+        net_delta = safe_num(archive.get("netDelta") if archive else seat.get("net_delta_top20"))
+        warehouse = external.get("warehouse_receipt") or {}
+        basis = external.get("basis") or {}
+        capital = external.get("capital_flow") or {}
+        reasons = build_reasons(
+            chg,
+            net_delta,
+            safe_num(archive.get("longShortRatio")) if archive else None,
+            safe_num(warehouse.get("increase_number")),
+            safe_num(warehouse.get("increase_ratio")),
+            safe_num(basis.get("basis_rate")),
+            safe_num(capital.get("amount_yi")),
+        )
+        signal = card.get("signal") if card else classify_abnormal_signal(chg, net_delta, safe_num(warehouse.get("increase_number")), safe_num(basis.get("basis_rate")))[0]
+        items.append({
+            "symbol": symbol,
+            "name": (row or {}).get("name") or get_variety_name(symbol),
+            "exchange": (row or {}).get("exchange"),
+            "sector": (row or {}).get("sector"),
+            "main_contract": (row or {}).get("main_contract"),
+            "change_pct": chg,
+            "main_close": (row or {}).get("main_close"),
+            "volume": (row or {}).get("total_volume") or (row or {}).get("main_volume"),
+            "open_interest": (row or {}).get("total_open_interest") or (row or {}).get("main_open_interest"),
+            "signal": signal,
+            "bias": (card or {}).get("bias") or (viewpoint or {}).get("bias") or "neutral",
+            "reasons": reasons[:6],
+            "news_viewpoint": viewpoint,
+            "related_news": news_by_symbol.get(symbol, [])[:3],
+            "watch_next": (card or {}).get("watch_next") or build_watch_next(chg, net_delta, safe_num(warehouse.get("increase_number")), safe_num(basis.get("basis_rate")), news_by_symbol.get(symbol, [])),
+            "status": "ok",
+        })
+    ok_items = [x for x in items if x.get("status") == "ok"]
+    summary = build_watch_digest_summary(ok_items, items)
+    return {"symbols": watch_codes, "items": items, "summary": summary}
+
+
+def build_watch_digest_summary(ok_items: list[dict], all_items: list[dict]) -> str:
+    if not all_items:
+        return "暂无自选品种。"
+    if not ok_items:
+        return "自选品种暂无有效数据，需先完成行情/增强源采集。"
+    strong = [x for x in ok_items if safe_num(x.get("change_pct")) is not None and safe_num(x.get("change_pct")) > 0]
+    weak = [x for x in ok_items if safe_num(x.get("change_pct")) is not None and safe_num(x.get("change_pct")) < 0]
+    news = [x for x in ok_items if x.get("news_viewpoint")]
+    hot = sorted(ok_items, key=lambda x: abs(safe_num(x.get("change_pct")) or 0), reverse=True)[:3]
+    hot_text = "、".join(f"{x.get('name')}({signed_pct(x.get('change_pct'))})" for x in hot if x.get("change_pct") is not None) or "暂无明显价格异动"
+    return f"自选品种覆盖 {len(ok_items)}/{len(all_items)} 个；上涨 {len(strong)} 个、下跌 {len(weak)} 个；重点波动：{hot_text}；其中 {len(news)} 个品种有关联资讯观点。"
+
+def build_tomorrow_watch(abnormal_cards: list[dict], data_quality: dict, gap_analysis: dict, news_digest: dict | None = None) -> list[dict]:
+    items = []
+    for card in abnormal_cards[:6]:
+        items.append({
+            "type": "variety",
+            "title": f"{card.get('name') or card.get('symbol')}后续验证",
+            "body": card.get("watch_next") or "观察价格、持仓和资讯是否继续同向验证。",
+            "priority": "high" if card.get("score", 0) >= 20 else "normal",
+        })
+    bad_exchanges = [x.get("exchange") for x in data_quality.get("exchanges", []) if x.get("status") != "ok"] if data_quality else []
+    if bad_exchanges:
+        items.append({
+            "type": "data_quality",
+            "title": "数据覆盖复核",
+            "body": "优先复核缺失/异常交易所：" + "、".join(bad_exchanges),
+            "priority": "high",
+        })
+    news_summary = (news_digest or {}).get("summary") or {}
+    viewpoints = (news_digest or {}).get("viewpoints") or []
+    if viewpoints:
+        bias_label = {"positive": "偏多", "negative": "偏空", "mixed": "分歧", "neutral": "中性"}
+        hot = "、".join(f"{v.get('name') or v.get('symbol')}({bias_label.get(v.get('bias'), '中性')})" for v in viewpoints[:5])
+        items.append({"type": "viewpoint", "title": "资讯观点复核", "body": f"重点复核资讯观点：{hot}，观察是否与数据异动互相验证。", "priority": "normal"})
+    if news_summary.get("top_symbols"):
+        top = "、".join(f"{sym}({count})" for sym, count in news_summary.get("top_symbols", [])[:5])
+        items.append({"type": "news", "title": "资讯热度跟踪", "body": f"重点复核资讯高频品种：{top}，判断是否与价格/持仓异动共振。", "priority": "normal"})
+    if gap_analysis.get("actionable_count", 0):
+        items.append({
+            "type": "data_gap",
+            "title": "可行动数据缺口",
+            "body": f"仍有 {gap_analysis.get('actionable_count')} 个可行动缺口，修复前降低相关结论权重。",
+            "priority": "high",
+        })
+    items.extend([
+        {"type": "calendar", "title": "交易所公告", "body": "关注保证金、涨跌停、交割月、最后交易日和夜盘安排。", "priority": "normal"},
+        {"type": "macro", "title": "宏观/产业事件", "body": "能化关注 EIA/OPEC，农产品关注 USDA/天气，贵金属关注美元与利率数据。", "priority": "normal"},
+    ])
+    return items[:10]
+
+
+def safe_num(value):
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def abnormal_score(chg, volume, oi, net_delta, warehouse_delta, basis_rate, capital_yi) -> float:
+    # Backward-compatible wrapper used by older tests/imports.
+    return sum(x["score"] for x in score_dimensions(safe_num(chg), safe_num(volume), safe_num(oi), safe_num(net_delta), None, safe_num(warehouse_delta), None, safe_num(basis_rate), safe_num(capital_yi), 0))
+
+
+def classify_price_oi(chg, oi) -> str:
+    # Backward-compatible wrapper used by older UI/tests.
+    return classify_abnormal_signal(safe_num(chg), None, None, None)[0]
+
+
+def build_watch_next(chg, net_delta, warehouse_delta, basis_rate, related_news: list[dict] | None = None) -> str:
+    notes = []
+    c = safe_num(chg)
+    n = safe_num(net_delta)
+    w = safe_num(warehouse_delta)
+    b = safe_num(basis_rate)
+    if c is not None and abs(c) >= 2:
+        notes.append("次日价格是否延续")
+    if n is not None:
+        notes.append("席位净多/净空是否连续")
+    if w is not None:
+        notes.append("仓单变化是否与价格同向验证")
+    if b is not None:
+        notes.append("基差是否继续修复或扩大")
+    if related_news:
+        notes.append("相关新闻是否继续发酵")
+    return "；".join(notes) or "等待更多数据确认"
+
+
+def index_news_by_symbol(items: list[dict]) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = defaultdict(list)
+    for item in items:
+        compact = {
+            "source": item.get("source"),
+            "title": item.get("title"),
+            "url": item.get("url"),
+            "published_at": item.get("published_at"),
+            "importance": item.get("importance"),
+        }
+        for sym in item.get("symbols") or []:
+            out[str(sym).upper()].append(compact)
+    for rows in out.values():
+        rows.sort(key=lambda x: (x.get("importance") or 0, x.get("published_at") or ""), reverse=True)
+    return out
+
+
+def signed_pct(value) -> str:
+    try:
+        n = float(value)
+        return f"{n:+.2f}%"
+    except Exception:
+        return str(value)
 
 
 def build_report_brief(sections: list[dict], stage: str, score: float) -> dict:
@@ -318,12 +651,15 @@ def signed_num(value) -> str:
 
 
 def quality_flags(data_quality: dict) -> list[str]:
-    if data_quality.get("status") == "ok":
+    if data_quality.get("status") == "ok" and not data_quality.get("fallback_used"):
         return []
-    flags = [f"数据覆盖 {data_quality.get('coverage_pct', 0)}%，部分交易所采集失败。"]
-    failed = [x["exchange"] for x in data_quality.get("exchanges", []) if x.get("status") == "failed"]
+    summary = data_quality.get("summary") or f"数据覆盖 {data_quality.get('coverage_pct', 0)}%。"
+    flags = [summary]
+    failed = data_quality.get("failed_exchanges") or [x["exchange"] for x in data_quality.get("exchanges", []) if x.get("status") == "failed"]
     if failed:
         flags.append("失败交易所：" + "、".join(failed))
+    if data_quality.get("fallback_used"):
+        flags.append(f"席位数据含 fallback 补充：{data_quality.get('fallback_used')} 个交易所。")
     return flags
 
 
