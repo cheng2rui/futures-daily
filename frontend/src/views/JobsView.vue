@@ -12,10 +12,11 @@ import { computed, onMounted, ref } from 'vue'
 import api from '../api.js'
 import SectionCard from '../components/SectionCard.vue'
 import SimpleTable from '../components/SimpleTable.vue'
+import { statusLabel } from '../labels.js'
 
 const jobs = ref([])
 const columns = ['ID', '任务', '状态', '交易日', '开始', '结束', '消息']
-const rows = computed(() => jobs.value.map(j => [j.id, j.name, j.status, j.trade_date || '-', fmt(j.started_at), fmt(j.finished_at), j.message || '-']))
+const rows = computed(() => jobs.value.map(j => [j.id, j.name, statusLabel(j.status), j.trade_date || '-', fmt(j.started_at), fmt(j.finished_at), j.message || '-']))
 function fmt(v) { return v ? String(v).replace('T', ' ').slice(0, 19) : '-' }
 onMounted(async () => { jobs.value = (await api.get('/jobs')).data })
 </script>

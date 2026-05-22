@@ -60,6 +60,7 @@ import KpiCard from '../components/KpiCard.vue'
 import SectionCard from '../components/SectionCard.vue'
 import SimpleTable from '../components/SimpleTable.vue'
 import { contractName, exchangeName } from '../exchange.js'
+import { kindLabel, reasonLabel, statusLabel } from '../labels.js'
 
 const loading = ref(false)
 const data = ref({ rows: [], summary: {} })
@@ -70,12 +71,12 @@ const gapAnalysis = ref({ gaps: [] })
 const keyword = ref('')
 const qualityFilter = ref('')
 
-const exchangeRows = computed(() => coverage.value.map(x => [exchangeName(x.exchange), x.varieties, `${x.with_seat_rank}/${x.varieties}`, `${x.with_archive_signal}/${x.varieties}`, x.daily_status, x.seat_status, x.archive_status, x.message || '-']))
-const gapRows = computed(() => gaps.value.map(x => [x.trade_date, exchangeName(x.exchange), x.kind, x.severity, x.rows, x.message || '-']))
-const gapAnalysisRows = computed(() => (gapAnalysis.value.gaps || []).filter(x => x.actionable).slice(0, 80).map(x => [exchangeName(x.exchange), x.symbol, x.name, x.kind, x.reason, x.actionable ? '是' : '否']))
+const exchangeRows = computed(() => coverage.value.map(x => [exchangeName(x.exchange), x.varieties, `${x.with_seat_rank}/${x.varieties}`, `${x.with_archive_signal}/${x.varieties}`, statusLabel(x.daily_status), statusLabel(x.seat_status), statusLabel(x.archive_status), x.message || '-']))
+const gapRows = computed(() => gaps.value.map(x => [x.trade_date, exchangeName(x.exchange), kindLabel(x.kind), statusLabel(x.severity), x.rows, x.message || '-']))
+const gapAnalysisRows = computed(() => (gapAnalysis.value.gaps || []).filter(x => x.actionable).slice(0, 80).map(x => [exchangeName(x.exchange), x.symbol, x.name, kindLabel(x.kind), x.reason, x.actionable ? '是' : '否']))
 const actionableGapCount = computed(() => (gapAnalysis.value.gaps || []).filter(x => x.actionable).length)
 const explainedGapCount = computed(() => Math.max(0, (gapAnalysis.value.count || (gapAnalysis.value.gaps || []).length) - actionableGapCount.value))
-const reasonSummaryRows = computed(() => Object.entries(gapAnalysis.value.summary || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, v]))
+const reasonSummaryRows = computed(() => Object.entries(gapAnalysis.value.summary || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => [reasonLabel(k), v]))
 const varietyRows = computed(() => filteredRows.value.map(x => [
   exchangeName(x.exchange),
   x.symbol,
@@ -104,7 +105,7 @@ const filteredRows = computed(() => {
 })
 
 function qualityValue(x, key) {
-  return x.quality?.[key] || x[`quality_${key}`] || '-'
+  return statusLabel(x.quality?.[key] || x[`quality_${key}`] || '-')
 }
 
 function fmtYi(v) {

@@ -25,8 +25,8 @@ defineProps({
 })
 function valueClass(v) {
   const s = String(v ?? '')
-  if (/^\+/.test(s) || /^ok$/i.test(s)) return 'positive'
-  if (/^-/.test(s) || /missing|fail|error|缺失/i.test(s)) return 'negative'
+  if (/^\+/.test(s) || /正常|成功|已解决/.test(s)) return 'positive'
+  if (/^-/.test(s) || /缺失|失败|错误|待处理/.test(s)) return 'negative'
   return ''
 }
 </script>
