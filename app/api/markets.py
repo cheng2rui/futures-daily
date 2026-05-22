@@ -1,13 +1,165 @@
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import DailyBar, WatchSymbol
+from app.models import Contract, DailyBar, WatchSymbol
+from app.services.collector import collect_daily_market
+from app.services.structure import sector_for
+from app.services.trading_day import normalize_trade_date
 
 router = APIRouter(prefix="/api/markets", tags=["markets"])
+
+
+def _now_text() -> str:
+    return datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _latest_trade_date(db: Session) -> str | None:
+    return db.scalar(select(DailyBar.trade_date).group_by(DailyBar.trade_date).order_by(desc(DailyBar.trade_date)).limit(1))
+
+
+def _empty_intraday(collect_result: dict | None = None) -> dict:
+    return {
+        "mode": "intraday",
+        "trade_date": "",
+        "updated_at": _now_text(),
+        "watermark_id": 0,
+        "disclaimer": "非实时行情，仅基于最近一次阶段性采集结果。",
+        "collect": collect_result,
+        "market": {"contracts": 0, "main_contracts": 0, "up_count": 0, "down_count": 0, "flat_count": 0, "volume": 0, "open_interest": 0},
+        "rankings": {"gainers": [], "losers": [], "volume": []},
+        "watch_symbols": [],
+        "sectors": [],
+    }
+
+
+def _change_pct(bar: DailyBar) -> float | None:
+    close = bar.close
+    base = bar.pre_close or bar.settlement or bar.open
+    if close is None or not base:
+        return None
+    try:
+        return round((float(close) - float(base)) / float(base) * 100, 2)
+    except ZeroDivisionError:
+        return None
+
+
+def _bar_payload(bar: DailyBar, meta: dict[tuple[str, str], Contract]) -> dict:
+    contract = meta.get(((bar.exchange or "").upper(), (bar.symbol or "").upper()))
+    return {
+        "trade_date": bar.trade_date,
+        "exchange": bar.exchange,
+        "symbol": bar.symbol,
+        "name": contract.name if contract else "",
+        "sector": contract.sector if contract and contract.sector else sector_for(bar.symbol),
+        "contract": bar.contract,
+        "open": bar.open,
+        "high": bar.high,
+        "low": bar.low,
+        "close": bar.close,
+        "pre_close": bar.pre_close,
+        "change_pct": _change_pct(bar),
+        "volume": bar.volume,
+        "open_interest": bar.open_interest,
+        "turnover": bar.turnover,
+    }
+
+
+def _main_contracts(rows: list[dict]) -> list[dict]:
+    by_key: dict[tuple[str, str], dict] = {}
+    for row in rows:
+        key = (row.get("exchange") or "", row.get("symbol") or "")
+        old = by_key.get(key)
+        if old is None or float(row.get("volume") or 0) > float(old.get("volume") or 0):
+            by_key[key] = {**row, "main_contract": row.get("contract")}
+    return list(by_key.values())
+
+
+def _sector_summary(rows: list[dict]) -> list[dict]:
+    buckets: dict[str, dict] = {}
+    for row in rows:
+        name = row.get("sector") or "未分类"
+        bucket = buckets.setdefault(name, {"name": name, "count": 0, "up": 0, "down": 0, "volume": 0.0, "open_interest": 0.0, "changes": []})
+        change = row.get("change_pct")
+        bucket["count"] += 1
+        bucket["volume"] += float(row.get("volume") or 0)
+        bucket["open_interest"] += float(row.get("open_interest") or 0)
+        if change is not None:
+            bucket["changes"].append(float(change))
+            if change > 0:
+                bucket["up"] += 1
+            elif change < 0:
+                bucket["down"] += 1
+    result = []
+    for bucket in buckets.values():
+        changes = bucket.pop("changes")
+        bucket["avg_change"] = round(sum(changes) / len(changes), 2) if changes else 0
+        bucket["up_ratio"] = round(bucket["up"] / bucket["count"] * 100, 1) if bucket["count"] else 0
+        result.append(bucket)
+    return sorted(result, key=lambda x: abs(float(x.get("avg_change") or 0)), reverse=True)
+
+
+@router.get("/intraday")
+def intraday_snapshot(trade_date: str | None = None, refresh: bool = False, db: Session = Depends(get_db)):
+    """Stage-based intraday snapshot built from the latest collected daily bars.
+
+    This is intentionally not a real-time trading feed. When refresh=true, it
+    triggers the existing market collector and then summarizes the latest saved
+    rows for dashboard use.
+    """
+    selected_date = normalize_trade_date(trade_date) if trade_date else _latest_trade_date(db)
+    collect_result = None
+    if refresh:
+        selected_date = normalize_trade_date(trade_date)
+        collect_result = collect_daily_market(db, selected_date)
+    if not selected_date:
+        return _empty_intraday(collect_result)
+
+    bars = db.scalars(select(DailyBar).where(DailyBar.trade_date == selected_date)).all()
+    contracts = db.scalars(select(Contract)).all()
+    meta = {((c.exchange or "").upper(), (c.symbol or "").upper()): c for c in contracts}
+    watch_symbols = db.scalars(select(WatchSymbol).where(WatchSymbol.enabled == True).order_by(WatchSymbol.sort_order, WatchSymbol.symbol)).all()  # noqa: E712
+    watch_keys = {((w.exchange or "").upper(), (w.symbol or "").upper()) for w in watch_symbols}
+    watch_symbol_only = {(w.symbol or "").upper() for w in watch_symbols if not w.exchange}
+
+    rows = [_bar_payload(bar, meta) for bar in bars]
+    liquid_rows = [r for r in rows if (r.get("volume") or 0) > 0 and (r.get("close") or 0) > 0]
+    main_rows = _main_contracts(liquid_rows)
+    up = sum(1 for r in main_rows if (r.get("change_pct") or 0) > 0)
+    down = sum(1 for r in main_rows if (r.get("change_pct") or 0) < 0)
+    flat = max(0, len(main_rows) - up - down)
+    updated_at = max((b.id for b in bars), default=0)
+
+    return {
+        "mode": "intraday",
+        "trade_date": selected_date,
+        "updated_at": _now_text(),
+        "watermark_id": updated_at,
+        "disclaimer": "非实时行情，仅基于最近一次阶段性采集结果。",
+        "collect": collect_result,
+        "market": {
+            "contracts": len(rows),
+            "main_contracts": len(main_rows),
+            "up_count": up,
+            "down_count": down,
+            "flat_count": flat,
+            "volume": sum(float(r.get("volume") or 0) for r in rows),
+            "open_interest": sum(float(r.get("open_interest") or 0) for r in rows),
+        },
+        "rankings": {
+            "gainers": sorted(main_rows, key=lambda r: r.get("change_pct") if r.get("change_pct") is not None else -999, reverse=True)[:10],
+            "losers": sorted(main_rows, key=lambda r: r.get("change_pct") if r.get("change_pct") is not None else 999)[:10],
+            "volume": sorted(liquid_rows, key=lambda r: float(r.get("volume") or 0), reverse=True)[:10],
+        },
+        "watch_symbols": [r for r in main_rows if ((r.get("exchange"), r.get("symbol")) in watch_keys or r.get("symbol") in watch_symbol_only)],
+        "sectors": _sector_summary(main_rows),
+    }
 
 
 @router.get("/bars")

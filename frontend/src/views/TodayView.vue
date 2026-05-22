@@ -20,8 +20,8 @@
 
     <div class="metric-grid">
       <div class="metric-card accent-red"><div class="metric-label">综合温度</div><div class="metric-main">{{ report.overview?.score ?? 0 }}</div><div class="metric-sub">{{ report.overview?.heat || '暂无热度' }}</div></div>
-      <div class="metric-card accent-green"><div class="metric-label">上涨 / 下跌</div><div class="metric-main">{{ report.market?.up_count ?? 0 }} / {{ report.market?.down_count ?? 0 }}</div><div class="metric-sub">主力合约 {{ report.market?.main_contracts ?? report.market?.liquid_contracts ?? report.market?.contracts ?? 0 }} 个</div></div>
-      <div class="metric-card accent-blue"><div class="metric-label">成交量</div><div class="metric-main">{{ fmtNum(report.market?.volume) }}</div><div class="metric-sub">总成交</div></div>
+      <div class="metric-card accent-green"><div class="metric-label">上涨 / 下跌</div><div class="metric-main">{{ dashboardMarket.up_count ?? 0 }} / {{ dashboardMarket.down_count ?? 0 }}</div><div class="metric-sub">主力合约 {{ dashboardMarket.main_contracts ?? dashboardMarket.liquid_contracts ?? dashboardMarket.contracts ?? 0 }} 个</div></div>
+      <div class="metric-card accent-blue"><div class="metric-label">成交量</div><div class="metric-main">{{ fmtNum(dashboardMarket.volume) }}</div><div class="metric-sub">{{ activeDashboardMode === 'intraday' ? '阶段快照' : '总成交' }}</div></div>
       <div class="metric-card accent-orange"><div class="metric-label">数据可信度</div><div class="metric-main">{{ qualityCoveragePct }}%</div><div class="metric-sub">{{ qualityOkText }}</div></div>
     </div>
 
@@ -42,9 +42,20 @@
             <button :class="{ active: activeDashboardMode === 'intraday' }" @click="setDashboardMode('intraday')">盘中</button>
             <button :class="{ active: activeDashboardMode === 'review' }" @click="setDashboardMode('review')">复盘</button>
           </div>
+          <div v-if="activeDashboardMode === 'intraday'" class="intraday-actions">
+            <span>{{ intraday.updated_at ? `更新 ${intraday.updated_at}` : '暂无盘中快照' }}</span>
+            <label><input v-model="intradayAutoRefresh" type="checkbox" /> 自动刷新</label>
+            <button class="secondary light" :disabled="intradayLoading" @click="loadIntraday(true)">{{ intradayLoading ? '刷新中...' : '刷新快照' }}</button>
+          </div>
           <button class="secondary light" @click="dashboardEditing = !dashboardEditing">{{ dashboardEditing ? '完成编辑' : '编辑看板' }}</button>
           <button v-if="dashboardEditing" class="secondary light" @click="resetDashboardLayout">恢复默认</button>
         </div>
+      </div>
+
+      <div v-if="activeDashboardMode === 'intraday'" class="intraday-disclaimer">{{ intraday.disclaimer || '非实时行情，仅基于最近一次阶段性采集结果。' }}</div>
+
+      <div v-if="reportVersionWarning" class="notice version-warning">
+        当前日报由 v{{ reportVersion }} 生成，服务已是 v{{ appVersion }}。建议重新生成日报以应用最新逻辑。
       </div>
 
       <div v-if="dashboardEditing" class="module-picker">
@@ -221,7 +232,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api.js'
 import BaseChart from '../components/BaseChart.vue'
@@ -239,6 +250,10 @@ const notice = ref('')
 const recollecting = ref({})
 const bulkRecollecting = ref(false)
 const report = ref(emptyReport())
+const intraday = ref(emptyIntraday())
+const intradayLoading = ref(false)
+const intradayAutoRefresh = ref(false)
+let intradayTimer = null
 const rankColumns = ['交易所', '品种', '合约', '板块', '收盘', '涨跌幅']
 const DASHBOARD_LAYOUT_KEY = 'futures-daily.today.dashboard.v1'
 const DASHBOARD_MODE_KEY = 'futures-daily.today.dashboard.mode.v1'
@@ -267,6 +282,7 @@ const dashboardEditing = ref(false)
 const draggingCardId = ref('')
 const expandedDashboardCards = ref([])
 const activeDashboardMode = ref(loadDashboardMode())
+const appVersion = ref('0.1.4')
 const viewingDate = computed(() => route.query.date ? String(route.query.date) : '')
 const displayDate = computed(() => formatDate(report.value.date || viewingDate.value) || '暂无日期')
 const isEmptyReport = computed(() => !report.value.date && !report.value.overview?.summary)
@@ -280,10 +296,13 @@ const pushButtonText = computed(() => pushing.value ? '推送中...' : '推送�
 
 const modeDashboardCards = computed(() => dashboardCards.value.filter(card => card.mode === activeDashboardMode.value))
 const visibleDashboardCards = computed(() => modeDashboardCards.value.filter(card => !hiddenDashboardCards.value.includes(card.id)))
-const watchRows = computed(() => rows(report.value.watch_symbols).slice(0, 14))
-const breadthRows = computed(() => (report.value.structure?.sector_breadth || []).map(x => [x.name, x.count, x.up, x.down, `${x.up_ratio}%`, fmtNum(x.volume), fmtNum(x.open_interest)]))
-const gainerRows = computed(() => rows(report.value.rankings?.gainers))
-const loserRows = computed(() => rows(report.value.rankings?.losers))
+const dashboardMarket = computed(() => activeDashboardMode.value === 'intraday' ? intraday.value.market || {} : report.value.market || {})
+const reportVersion = computed(() => report.value.meta?.version || '')
+const reportVersionWarning = computed(() => activeDashboardMode.value === 'review' && reportVersion.value && appVersion.value && reportVersion.value !== appVersion.value)
+const watchRows = computed(() => rows(activeDashboardMode.value === 'intraday' ? intraday.value.watch_symbols : report.value.watch_symbols).slice(0, 14))
+const breadthRows = computed(() => (activeDashboardMode.value === 'intraday' ? intraday.value.sectors || [] : report.value.structure?.sector_breadth || []).map(x => [x.name, x.count, x.up, x.down, x.up_ratio != null ? `${x.up_ratio}%` : '-', fmtNum(x.volume), fmtNum(x.open_interest)]))
+const gainerRows = computed(() => rows(activeDashboardMode.value === 'intraday' ? intraday.value.rankings?.gainers : report.value.rankings?.gainers))
+const loserRows = computed(() => rows(activeDashboardMode.value === 'intraday' ? intraday.value.rankings?.losers : report.value.rankings?.losers))
 const seatSignalCards = computed(() => (report.value.seats?.archive?.net_delta_top || []).slice(0, 6).map(x => ({ exchange: exchangeName(x.exchange), name: x.displayName || x.name, netDelta: x.netDelta, longShortRatio: x.longShortRatio, netDir: x.netDir })))
 const qualityExchangeRows = computed(() => report.value.data_quality?.exchanges || [])
 const recoverableQualityRows = computed(() => qualityExchangeRows.value.filter(isRecoverableQualityRow))
@@ -295,8 +314,8 @@ const qualityActionText = computed(() => {
   if (!recoverable && unrecoverable) return `${unrecoverable} 个不可自动恢复项，需要官方恢复或商业源。`
   return `${recoverable} 个可补采项${unrecoverable ? `，${unrecoverable} 个不可自动恢复项` : ''}。`
 })
-const sectorStrengthTop = computed(() => [...(report.value.sectors || [])].sort((a, b) => Math.abs(Number(b.avg_change || 0)) - Math.abs(Number(a.avg_change || 0))).slice(0, 8))
-const sectorBreadth = computed(() => report.value.structure?.sector_breadth || [])
+const sectorStrengthTop = computed(() => [...(activeDashboardMode.value === 'intraday' ? intraday.value.sectors || [] : report.value.sectors || [])].sort((a, b) => Math.abs(Number(b.avg_change || 0)) - Math.abs(Number(a.avg_change || 0))).slice(0, 8))
+const sectorBreadth = computed(() => activeDashboardMode.value === 'intraday' ? intraday.value.sectors || [] : report.value.structure?.sector_breadth || [])
 const qualityCoveragePct = computed(() => report.value.data_quality?.overall_coverage_pct ?? report.value.data_quality?.coverage_pct ?? 0)
 const qualityOkText = computed(() => {
   const q = report.value.data_quality
@@ -332,11 +351,12 @@ const sectorVolumeOption = computed(() => barOption({ names: sectorBreadth.value
   { name: '成交量', data: sectorBreadth.value.map(x => Number(x.volume || 0)), color: '#3f5efb' },
   { name: '持仓量', data: sectorBreadth.value.map(x => Number(x.open_interest || 0)), color: '#16c79a' },
 ] }))
-const volumeTopOption = computed(() => horizontalBarOption((report.value.rankings?.volume || []).slice(0, 10).map(x => ({ name: `${x.symbol} ${x.name || ''}`, value: Number(x.volume || 0) })), '#3f5efb'))
+const volumeTopOption = computed(() => horizontalBarOption(((activeDashboardMode.value === 'intraday' ? intraday.value.rankings?.volume : report.value.rankings?.volume) || []).slice(0, 10).map(x => ({ name: `${x.symbol} ${x.name || ''}`, value: Number(x.volume || 0) })), '#3f5efb'))
 const longSeatOption = computed(() => horizontalBarOption((report.value.seats?.long_increase_top || []).slice(0, 10).map(x => ({ name: `${x.variety} ${x.seat}`, value: Number(x.change || 0) })), '#d93655'))
 const shortSeatOption = computed(() => horizontalBarOption((report.value.seats?.short_increase_top || []).slice(0, 10).map(x => ({ name: `${x.variety} ${x.seat}`, value: Number(x.change || 0) })), '#12966b'))
 
 function emptyReport() { return { overview: {}, market: {}, meta: {}, sectors: [], rankings: {}, data_quality: {}, watch_symbols: [], risk_flags: [], intelligence: {} } }
+function emptyIntraday() { return { mode: 'intraday', trade_date: '', updated_at: '', disclaimer: '非实时行情，仅基于最近一次阶段性采集结果。', market: {}, rankings: {}, sectors: [], watch_symbols: [] } }
 function loadDashboardLayout() {
   try {
     const saved = JSON.parse(localStorage.getItem(DASHBOARD_LAYOUT_KEY) || '{}')
@@ -474,8 +494,20 @@ async function pushReport() {
   }
 }
 
+async function loadHealth() { try { const { data } = await api.get('/health'); appVersion.value = data?.version || appVersion.value } catch {} }
 async function load() { loading.value = true; error.value = ''; try { const url = viewingDate.value ? `/reports/${viewingDate.value}` : '/reports/latest'; const { data } = await api.get(url); report.value = data || emptyReport() } catch (err) { report.value = emptyReport(); error.value = viewingDate.value ? `未找到 ${formatDate(viewingDate.value)} 的日报。` : '日报加载失败，请稍后重试。' } finally { loading.value = false } }
-async function generate() { loading.value = true; error.value = ''; notice.value = ''; try { await api.post('/reports/generate', null, { params: viewingDate.value ? { trade_date: viewingDate.value, collect: true } : {} }); await load(); notice.value = '日报已重新生成。' } finally { loading.value = false } }
+async function loadIntraday(refresh = false) {
+  intradayLoading.value = true
+  try {
+    const { data } = await api.get('/markets/intraday', { params: { refresh, trade_date: viewingDate.value || undefined } })
+    intraday.value = data || emptyIntraday()
+  } catch (err) {
+    if (activeDashboardMode.value === 'intraday') error.value = '盘中快照加载失败，请稍后重试。'
+  } finally {
+    intradayLoading.value = false
+  }
+}
+async function generate() { loading.value = true; error.value = ''; notice.value = ''; try { await api.post('/reports/generate', null, { params: viewingDate.value ? { trade_date: viewingDate.value, collect: true } : {} }); await load(); await loadIntraday(false); notice.value = '日报已重新生成。' } finally { loading.value = false } }
 async function recollectExchange(x) {
   if (!report.value.date || !x?.exchange || !isRecoverableQualityRow(x)) return
   error.value = ''
@@ -520,8 +552,18 @@ function runRecollect(x, rebuild) {
   for (const kind of recollectKinds(x)) params.append('kinds', kind)
   return api.post(`/reports/${report.value.date}/recollect?${params.toString()}`)
 }
-onMounted(load)
-watch(() => route.query.date, load)
+function startIntradayTimer() {
+  if (intradayTimer) clearInterval(intradayTimer)
+  intradayTimer = null
+  if (intradayAutoRefresh.value && activeDashboardMode.value === 'intraday') {
+    intradayTimer = setInterval(() => loadIntraday(false), 5 * 60 * 1000)
+  }
+}
+onMounted(async () => { await Promise.all([loadHealth(), load(), loadIntraday(false)]); startIntradayTimer() })
+onUnmounted(() => { if (intradayTimer) clearInterval(intradayTimer) })
+watch(() => route.query.date, async () => { await Promise.all([load(), loadIntraday(false)]) })
+watch(activeDashboardMode, mode => { if (mode === 'intraday' && !intraday.value.trade_date) loadIntraday(false); startIntradayTimer() })
+watch(intradayAutoRefresh, startIntradayTimer)
 </script>
 
 <style scoped>
@@ -553,6 +595,10 @@ watch(() => route.query.date, load)
 .mode-switch { display:flex; gap:4px; padding:4px; border-radius:999px; background:#eef2ff; border:1px solid #dfe6ff; }
 .mode-switch button { border:0; border-radius:999px; padding:8px 14px; background:transparent; color:#64748b; font-weight:900; cursor:pointer; }
 .mode-switch button.active { color:#fff; background:linear-gradient(135deg,#3f5efb,#6f8cff); box-shadow:0 8px 20px rgba(63,94,251,.24); }
+.intraday-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; color:#64748b; font-size:12px; font-weight:800; }
+.intraday-actions label { display:flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap; }
+.intraday-disclaimer { margin:-2px 0 12px; padding:10px 13px; color:#64748b; background:#f8fafc; border:1px solid #e8edf5; border-radius:14px; font-size:13px; font-weight:800; }
+.notice.version-warning { background:#fff7e6; color:#8a5200; border-color:#ffd591; }
 .secondary.light { color:#3157d5; background:#f5f7ff; border-color:#dfe6ff; box-shadow:none; }
 .module-picker { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; padding:12px; border-radius:16px; background:#f8fafc; border:1px dashed #cbd5e1; }
 .module-picker label { display:flex; gap:6px; align-items:center; color:#475569; background:#fff; border:1px solid #e2e8f0; border-radius:999px; padding:7px 10px; font-size:13px; font-weight:800; cursor:pointer; }
