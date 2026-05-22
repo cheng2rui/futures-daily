@@ -16,26 +16,10 @@
     <div v-else-if="sourceTip" class="notice">{{ sourceTip }}</div>
 
     <div class="metric-grid">
-      <div class="metric-card accent-red">
-        <div class="metric-label">综合温度</div>
-        <div class="metric-main">{{ report.overview?.score ?? 0 }}</div>
-        <div class="metric-sub">{{ report.overview?.heat || '暂无热度' }}</div>
-      </div>
-      <div class="metric-card accent-green">
-        <div class="metric-label">上涨 / 下跌</div>
-        <div class="metric-main">{{ report.market?.up_count ?? 0 }} / {{ report.market?.down_count ?? 0 }}</div>
-        <div class="metric-sub">全市场 {{ report.market?.contracts ?? 0 }} 合约</div>
-      </div>
-      <div class="metric-card accent-blue">
-        <div class="metric-label">成交量</div>
-        <div class="metric-main">{{ fmtNum(report.market?.volume) }}</div>
-        <div class="metric-sub">总成交</div>
-      </div>
-      <div class="metric-card accent-orange">
-        <div class="metric-label">数据覆盖</div>
-        <div class="metric-main">{{ report.data_quality?.coverage_pct ?? 0 }}%</div>
-        <div class="metric-sub">{{ qualityOkText }}</div>
-      </div>
+      <div class="metric-card accent-red"><div class="metric-label">综合温度</div><div class="metric-main">{{ report.overview?.score ?? 0 }}</div><div class="metric-sub">{{ report.overview?.heat || '暂无热度' }}</div></div>
+      <div class="metric-card accent-green"><div class="metric-label">上涨 / 下跌</div><div class="metric-main">{{ report.market?.up_count ?? 0 }} / {{ report.market?.down_count ?? 0 }}</div><div class="metric-sub">全市场 {{ report.market?.contracts ?? 0 }} 合约</div></div>
+      <div class="metric-card accent-blue"><div class="metric-label">成交量</div><div class="metric-main">{{ fmtNum(report.market?.volume) }}</div><div class="metric-sub">总成交</div></div>
+      <div class="metric-card accent-orange"><div class="metric-label">数据覆盖</div><div class="metric-main">{{ report.data_quality?.coverage_pct ?? 0 }}%</div><div class="metric-sub">{{ qualityOkText }}</div></div>
     </div>
 
     <div v-if="isEmptyReport" class="empty-state large">暂无日报数据。建议先生成日报，再查看市场结构、席位信号和数据资产。</div>
@@ -48,13 +32,9 @@
       <div class="layout-grid">
         <SectionCard title="市场风向">
           <div class="signal-stack">
-            <div v-for="item in marketSignals" :key="item.label" class="signal-item">
-              <span class="signal-name">{{ item.label }}</span>
-              <strong :class="item.tone">{{ item.value }}</strong>
-            </div>
+            <div v-for="item in marketSignals" :key="item.label" class="signal-item"><span class="signal-name">{{ item.label }}</span><strong :class="item.tone">{{ item.value }}</strong></div>
           </div>
         </SectionCard>
-
         <SectionCard title="板块强弱 Top">
           <div class="sector-list">
             <div v-for="s in sectorStrengthTop" :key="s.name" class="sector-row">
@@ -65,13 +45,18 @@
         </SectionCard>
       </div>
 
+      <div class="chart-grid">
+        <SectionCard title="板块成交 / 持仓"><BaseChart :option="sectorVolumeOption" /></SectionCard>
+        <SectionCard title="成交量 TOP10"><BaseChart :option="volumeTopOption" /></SectionCard>
+      </div>
+      <div class="chart-grid">
+        <SectionCard title="席位多头增仓 TOP"><BaseChart :option="longSeatOption" /></SectionCard>
+        <SectionCard title="席位空头增仓 TOP"><BaseChart :option="shortSeatOption" /></SectionCard>
+      </div>
+
       <div class="layout-grid three">
-        <SectionCard title="涨幅 TOP10">
-          <SimpleTable :columns="rankColumns" :data="gainerRows" />
-        </SectionCard>
-        <SectionCard title="跌幅 TOP10">
-          <SimpleTable :columns="rankColumns" :data="loserRows" />
-        </SectionCard>
+        <SectionCard title="涨幅 TOP10"><SimpleTable :columns="rankColumns" :data="gainerRows" /></SectionCard>
+        <SectionCard title="跌幅 TOP10"><SimpleTable :columns="rankColumns" :data="loserRows" /></SectionCard>
         <SectionCard title="结构信号 TOP">
           <div v-if="!seatSignalCards.length" class="empty-state small">暂无结构化席位信号。</div>
           <div v-else class="seat-cards">
@@ -90,12 +75,8 @@
       </SectionCard>
 
       <div class="layout-grid" style="margin-top:16px">
-        <SectionCard title="板块广度">
-          <SimpleTable :columns="['板块', '合约数', '上涨', '下跌', '上涨占比', '成交量', '持仓量']" :data="breadthRows" />
-        </SectionCard>
-        <SectionCard title="数据质量">
-          <SimpleTable :columns="['交易所', '状态', '日行情', '席位', '错误']" :data="qualityRows" />
-        </SectionCard>
+        <SectionCard title="板块广度"><SimpleTable :columns="['板块', '合约数', '上涨', '下跌', '上涨占比', '成交量', '持仓量']" :data="breadthRows" /></SectionCard>
+        <SectionCard title="数据质量"><SimpleTable :columns="['交易所', '状态', '日行情', '席位', '错误']" :data="qualityRows" /></SectionCard>
       </div>
     </template>
   </div>
@@ -105,6 +86,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api.js'
+import BaseChart from '../components/BaseChart.vue'
 import SectionCard from '../components/SectionCard.vue'
 import SimpleTable from '../components/SimpleTable.vue'
 
@@ -122,112 +104,51 @@ const watchRows = computed(() => rows(report.value.watch_symbols).slice(0, 14))
 const breadthRows = computed(() => (report.value.structure?.sector_breadth || []).map(x => [x.name, x.count, x.up, x.down, `${x.up_ratio}%`, fmtNum(x.volume), fmtNum(x.open_interest)]))
 const gainerRows = computed(() => rows(report.value.rankings?.gainers))
 const loserRows = computed(() => rows(report.value.rankings?.losers))
-const seatSignalCards = computed(() => (report.value.seats?.archive?.net_delta_top || []).slice(0, 6).map(x => ({
-  exchange: x.exchange,
-  name: x.displayName || x.name,
-  netDelta: x.netDelta,
-  longShortRatio: x.longShortRatio,
-  netDir: x.netDir,
-})))
-const qualityRows = computed(() => (report.value.data_quality?.exchanges || []).map(x => [
-  x.exchange,
-  x.status,
-  x.daily?.rows ?? 0,
-  x.seat_rank?.rows ?? 0,
-  x.daily?.error || x.seat_rank?.error || '-'
-]))
+const seatSignalCards = computed(() => (report.value.seats?.archive?.net_delta_top || []).slice(0, 6).map(x => ({ exchange: x.exchange, name: x.displayName || x.name, netDelta: x.netDelta, longShortRatio: x.longShortRatio, netDir: x.netDir })))
+const qualityRows = computed(() => (report.value.data_quality?.exchanges || []).map(x => [x.exchange, x.status, x.daily?.rows ?? 0, x.seat_rank?.rows ?? 0, x.daily?.error || x.seat_rank?.error || '-']))
 const sectorStrengthTop = computed(() => [...(report.value.sectors || [])].sort((a, b) => Math.abs(Number(b.avg_change || 0)) - Math.abs(Number(a.avg_change || 0))).slice(0, 8))
-const qualityOkText = computed(() => {
-  const q = report.value.data_quality
-  if (!q || q.status === 'empty') return '暂无质量数据'
-  const bad = (q.exchanges || []).filter(x => x.status !== 'ok').length
-  return bad ? `${bad} 个交易所需关注` : '覆盖良好'
-})
+const sectorBreadth = computed(() => report.value.structure?.sector_breadth || [])
+const qualityOkText = computed(() => { const q = report.value.data_quality; if (!q || q.status === 'empty') return '暂无质量数据'; const bad = (q.exchanges || []).filter(x => x.status !== 'ok').length; return bad ? `${bad} 个交易所需关注` : '覆盖良好' })
 const marketSignals = computed(() => [
   { label: '市场阶段', value: report.value.overview?.stage || '-', tone: '' },
   { label: '风险状态', value: report.value.overview?.risk || '-', tone: 'tone-warn' },
-  { label: '最强板块', value: bestSector.value, tone: 'tone-up' },
-  { label: '最弱板块', value: worstSector.value, tone: 'tone-down' },
+  { label: '最活跃板块', value: activeSector.value, tone: 'tone-up' },
+  { label: '席位关注', value: seatSignalCards.value[0] ? `${seatSignalCards.value[0].name} ${fmtSigned(seatSignalCards.value[0].netDelta)}` : '-', tone: 'tone-warn' },
 ])
-const bestSector = computed(() => {
-  const x = [...(report.value.sectors || [])].sort((a, b) => Number(b.avg_change || 0) - Number(a.avg_change || 0))[0]
-  return x ? `${x.name} ${signedPct(x.avg_change)}` : '-'
-})
-const worstSector = computed(() => {
-  const x = [...(report.value.sectors || [])].sort((a, b) => Number(a.avg_change || 0) - Number(b.avg_change || 0))[0]
-  return x ? `${x.name} ${signedPct(x.avg_change)}` : '-'
-})
-const sourceTip = computed(() => {
-  const quality = report.value.data_quality
-  if (!quality || quality.status === 'empty') return ''
-  const bad = (quality.exchanges || []).filter(x => x.status !== 'ok')
-  if (!bad.length) return `数据来源：交易所/AKShare/增强源，覆盖 ${quality.coverage_pct ?? 0}%。`
-  return `数据来源提示：${bad.map(x => `${x.exchange} ${x.status}`).join('、')}；部分交易所可能使用 fallback 或暂无数据。`
-})
+const activeSector = computed(() => { const x = [...sectorBreadth.value].sort((a, b) => Number(b.volume || 0) - Number(a.volume || 0))[0]; return x ? `${x.name} ${fmtNum(x.volume)}` : '-' })
+const sourceTip = computed(() => { const quality = report.value.data_quality; if (!quality || quality.status === 'empty') return ''; const bad = (quality.exchanges || []).filter(x => x.status !== 'ok'); if (!bad.length) return `数据来源：交易所/AKShare/增强源，覆盖 ${quality.coverage_pct ?? 0}%。`; return `数据来源提示：${bad.map(x => `${x.exchange} ${x.status}`).join('、')}；部分交易所可能使用 fallback 或暂无数据。` })
 
-function emptyReport() {
-  return { overview: {}, market: {}, meta: {}, sectors: [], rankings: {}, data_quality: {}, watch_symbols: [], risk_flags: [] }
-}
+const sectorVolumeOption = computed(() => barOption({ names: sectorBreadth.value.map(x => x.name), series: [
+  { name: '成交量', data: sectorBreadth.value.map(x => Number(x.volume || 0)), color: '#3f5efb' },
+  { name: '持仓量', data: sectorBreadth.value.map(x => Number(x.open_interest || 0)), color: '#16c79a' },
+] }))
+const volumeTopOption = computed(() => horizontalBarOption((report.value.rankings?.volume || []).slice(0, 10).map(x => ({ name: `${x.symbol} ${x.name || ''}`, value: Number(x.volume || 0) })), '#3f5efb'))
+const longSeatOption = computed(() => horizontalBarOption((report.value.seats?.long_increase_top || []).slice(0, 10).map(x => ({ name: `${x.variety} ${x.seat}`, value: Number(x.change || 0) })), '#16c79a'))
+const shortSeatOption = computed(() => horizontalBarOption((report.value.seats?.short_increase_top || []).slice(0, 10).map(x => ({ name: `${x.variety} ${x.seat}`, value: Number(x.change || 0) })), '#e94560'))
 
-function rows(items = []) {
-  return (items || []).map(x => [x.exchange, x.symbol, x.contract, x.sector, x.close ?? '-', x.change_pct == null ? '-' : signedPct(x.change_pct)])
-}
-
+function emptyReport() { return { overview: {}, market: {}, meta: {}, sectors: [], rankings: {}, data_quality: {}, watch_symbols: [], risk_flags: [] } }
+function rows(items = []) { return (items || []).map(x => [x.exchange, x.symbol, x.contract, x.sector, x.close ?? '-', x.change_pct == null ? '-' : signedPct(x.change_pct)]) }
 function signedPct(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}%` : `${v}%` }
 function fmtSigned(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}` : `${v}` }
-function fmtNum(value) {
-  if (value == null) return '-'
-  const n = Number(value)
-  if (!Number.isFinite(n)) return value
-  if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(2)}亿`
-  if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`
-  return n.toFixed(0)
-}
+function fmtNum(value) { if (value == null) return '-'; const n = Number(value); if (!Number.isFinite(n)) return value; if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(2)}亿`; if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`; return n.toFixed(0) }
+function compactNumber(v) { const n = Number(v || 0); if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(1)}亿`; if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`; return String(Math.round(n)) }
 function toneClass(v) { const n = Number(v || 0); return n > 0 ? 'tone-up' : n < 0 ? 'tone-down' : 'tone-flat' }
 function barWidth(v) { return `${Math.min(100, Math.max(6, Math.abs(Number(v || 0)) * 12))}%` }
 function barColor(v) { return Number(v || 0) >= 0 ? 'linear-gradient(90deg,#18b785,#5ee0b6)' : 'linear-gradient(90deg,#e94560,#ff9aa9)' }
+function chartTextStyle() { return { color: '#64748b', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' } }
+function barOption({ names, series }) { return { color: series.map(x => x.color), tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: compactNumber }, legend: { top: 0, textStyle: chartTextStyle() }, grid: { top: 42, left: 48, right: 18, bottom: 34 }, xAxis: { type: 'category', data: names, axisLabel: { ...chartTextStyle(), interval: 0 }, axisTick: { show: false }, axisLine: { lineStyle: { color: '#e2e8f0' } } }, yAxis: { type: 'value', axisLabel: { ...chartTextStyle(), formatter: compactNumber }, splitLine: { lineStyle: { color: '#eef2f7' } } }, series: series.map(x => ({ name: x.name, type: 'bar', data: x.data, barMaxWidth: 18, itemStyle: { borderRadius: [7, 7, 0, 0] } })) } }
+function horizontalBarOption(items, color) { const rows = [...items].filter(x => Number.isFinite(x.value)).sort((a, b) => a.value - b.value); return { color: [color], tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: compactNumber }, grid: { top: 10, left: 92, right: 24, bottom: 24 }, xAxis: { type: 'value', axisLabel: { ...chartTextStyle(), formatter: compactNumber }, splitLine: { lineStyle: { color: '#eef2f7' } } }, yAxis: { type: 'category', data: rows.map(x => x.name), axisLabel: { ...chartTextStyle(), width: 86, overflow: 'truncate' }, axisTick: { show: false }, axisLine: { show: false } }, series: [{ type: 'bar', data: rows.map(x => x.value), barMaxWidth: 16, itemStyle: { borderRadius: [0, 8, 8, 0] } }] } }
+function formatDate(value) { if (!value) return ''; const text = String(value); if (/^\d{8}$/.test(text)) return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6)}`; return text }
 
-function formatDate(value) {
-  if (!value) return ''
-  const text = String(value)
-  if (/^\d{8}$/.test(text)) return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6)}`
-  return text
-}
-
-async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    const url = viewingDate.value ? `/reports/${viewingDate.value}` : '/reports/latest'
-    const { data } = await api.get(url)
-    report.value = data || emptyReport()
-  } catch (err) {
-    report.value = emptyReport()
-    error.value = viewingDate.value ? `未找到 ${formatDate(viewingDate.value)} 的日报。` : '日报加载失败，请稍后重试。'
-  } finally {
-    loading.value = false
-  }
-}
-
-async function generate() {
-  loading.value = true
-  error.value = ''
-  try {
-    await api.post('/reports/generate', null, { params: viewingDate.value ? { trade_date: viewingDate.value } : {} })
-    if (viewingDate.value) await router.replace('/')
-    await load()
-  } finally {
-    loading.value = false
-  }
-}
-
+async function load() { loading.value = true; error.value = ''; try { const url = viewingDate.value ? `/reports/${viewingDate.value}` : '/reports/latest'; const { data } = await api.get(url); report.value = data || emptyReport() } catch (err) { report.value = emptyReport(); error.value = viewingDate.value ? `未找到 ${formatDate(viewingDate.value)} 的日报。` : '日报加载失败，请稍后重试。' } finally { loading.value = false } }
+async function generate() { loading.value = true; error.value = ''; try { await api.post('/reports/generate', null, { params: viewingDate.value ? { trade_date: viewingDate.value } : {} }); if (viewingDate.value) await router.replace('/'); await load() } finally { loading.value = false } }
 onMounted(load)
 watch(() => route.query.date, load)
 </script>
 
 <style scoped>
-.today { max-width: 1480px; margin: 0 auto; }
-.hero { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; padding:26px; border-radius:24px; color:#fff; background: radial-gradient(circle at top left, #3f5efb 0, #1a1a2e 42%, #111827 100%); box-shadow:0 18px 48px rgba(17,24,39,.18); }
+.today { max-width:1480px; margin:0 auto; }
+.hero { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; padding:26px; border-radius:24px; color:#fff; background:radial-gradient(circle at top left,#3f5efb 0,#1a1a2e 42%,#111827 100%); box-shadow:0 18px 48px rgba(17,24,39,.18); }
 .eyebrow { color:#a8c7ff; font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
 .hero h1 { margin:8px 0 10px; font-size:32px; line-height:1.2; }
 .hero p { max-width:860px; margin:0; color:#dbeafe; line-height:1.8; }
@@ -246,7 +167,7 @@ watch(() => route.query.date, load)
 .notice.error { background:#fff0f0; color:#bd3434; border-color:#ffd6d6; }
 .risk-strip { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
 .risk-chip { background:#fff7e6; border:1px solid #ffd591; color:#8a5200; padding:9px 12px; border-radius:999px; font-weight:700; }
-.layout-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+.layout-grid, .chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
 .layout-grid.three { grid-template-columns:1fr 1fr 1fr; }
 .signal-stack { display:grid; gap:12px; }
 .signal-item { display:flex; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid #f1f5f9; }
@@ -266,6 +187,6 @@ watch(() => route.query.date, load)
 .empty-state { padding:28px; text-align:center; color:#888; background:#fafafa; border-radius:14px; }
 .empty-state.large { margin:18px 0; padding:48px; }
 .empty-state.small { padding:18px; }
-@media (max-width: 1100px) { .metric-grid, .layout-grid, .layout-grid.three { grid-template-columns:1fr 1fr; } }
-@media (max-width: 760px) { .hero { flex-direction:column; } .metric-grid, .layout-grid, .layout-grid.three { grid-template-columns:1fr; } .hero h1 { font-size:26px; } }
+@media (max-width:1100px) { .metric-grid, .layout-grid, .layout-grid.three, .chart-grid { grid-template-columns:1fr 1fr; } }
+@media (max-width:760px) { .hero { flex-direction:column; } .metric-grid, .layout-grid, .layout-grid.three, .chart-grid { grid-template-columns:1fr; } .hero h1 { font-size:26px; } }
 </style>

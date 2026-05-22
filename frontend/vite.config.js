@@ -7,6 +7,15 @@ export default defineConfig({
     port: 5173
   },
   build: {
-    outDir: 'dist'
+    outDir: 'dist',
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          echarts: ['echarts/core', 'echarts/charts', 'echarts/components', 'echarts/renderers'],
+          vendor: ['vue', 'vue-router', 'axios'],
+        },
+      },
+    },
   }
 })
