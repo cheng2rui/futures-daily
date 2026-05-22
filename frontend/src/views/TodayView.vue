@@ -45,7 +45,8 @@
           <div v-if="activeDashboardMode === 'intraday'" class="intraday-actions">
             <span>{{ intraday.updated_at ? `更新 ${intraday.updated_at}` : '暂无盘中快照' }}</span>
             <label><input v-model="intradayAutoRefresh" type="checkbox" /> 自动刷新</label>
-            <button class="secondary light" :disabled="intradayLoading" @click="loadIntraday(true)">{{ intradayLoading ? '刷新中...' : '刷新快照' }}</button>
+            <button class="secondary light" :disabled="intradayLoading" @click="loadIntraday(false)">{{ intradayLoading ? '刷新中...' : '刷新页面' }}</button>
+            <button class="secondary light collect" :disabled="intradayLoading" @click="loadIntraday(true)">{{ intradayLoading ? '采集中...' : '重新采集' }}</button>
           </div>
           <button class="secondary light" @click="dashboardEditing = !dashboardEditing">{{ dashboardEditing ? '完成编辑' : '编辑看板' }}</button>
           <button v-if="dashboardEditing" class="secondary light" @click="resetDashboardLayout">恢复默认</button>
@@ -635,6 +636,7 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .mode-switch button.active { color:#fff; background:linear-gradient(135deg,#3f5efb,#6f8cff); box-shadow:0 8px 20px rgba(63,94,251,.24); }
 .intraday-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; color:#64748b; font-size:12px; font-weight:800; }
 .intraday-actions label { display:flex; align-items:center; gap:5px; cursor:pointer; white-space:nowrap; }
+.intraday-actions .collect { color:#8a5200; background:#fff7e6; border-color:#ffd591; }
 .intraday-disclaimer { margin:-2px 0 12px; padding:10px 13px; color:#64748b; background:#f8fafc; border:1px solid #e8edf5; border-radius:14px; font-size:13px; font-weight:800; }
 .notice.version-warning { background:#fff7e6; color:#8a5200; border-color:#ffd591; }
 .version-rebuild { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
