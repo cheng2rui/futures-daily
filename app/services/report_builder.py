@@ -19,7 +19,7 @@ from app.services.structure import build_structure, pct_change, sector_for
 
 from app.version import VERSION
 
-REPORT_SCHEMA_VERSION = 2
+REPORT_SCHEMA_VERSION = 3
 LIQUID_MIN_VOLUME = 1000
 LIQUID_MIN_OPEN_INTEREST = 1000
 
@@ -127,6 +127,7 @@ def build_report(db: Session, trade_date: str) -> Report:
         seat_long=seat_long,
         seat_short=seat_short,
     )
+    report_brief = build_report_brief(report_sections, stage, score)
 
     payload = {
         "date": trade_date,
@@ -165,6 +166,7 @@ def build_report(db: Session, trade_date: str) -> Report:
             )[:10],
         },
         "risk_flags": quality_flags(data_quality),
+        "report_brief": report_brief,
         "report_sections": report_sections,
         "action_notes": build_action_notes(gap_analysis),
     }
@@ -247,6 +249,46 @@ def build_report_sections(
             "body": f"本次品种级数据集覆盖 {dataset_count} 个品种，基础数据覆盖率 {coverage}%。数据缺口共 {gap_analysis.get('count', 0)} 条，其中可行动缺口 {actionable} 条、已解释缺口 {explained} 条。当前结论适合作为盘后复盘和次日观察清单，不应单独作为交易依据。",
         },
     ]
+
+
+def build_report_brief(sections: list[dict], stage: str, score: float) -> dict:
+    by_title = {x.get("title"): x for x in sections}
+    conclusion = by_title.get("市场结论", {}).get("body", "暂无结论")
+    opportunity = by_title.get("主线机会", {}).get("body", "暂无机会线索")
+    risk = by_title.get("风险提示", {}).get("body", "暂无风险提示")
+    data = by_title.get("数据可信度", {}).get("body", "暂无数据说明")
+    return {
+        "title": f"{stage}｜综合分 {score}",
+        "conclusion": conclusion,
+        "bullets": [
+            {"label": "重点关注", "text": pick_after(opportunity, "当前结构信号：") or shorten_sentence(opportunity)},
+            {"label": "风险提示", "text": pick_after(risk, "当前空头增仓靠前：") or shorten_sentence(risk)},
+            {"label": "数据可信度", "text": compact_data_text(data)},
+        ],
+    }
+
+
+def pick_after(text: str, marker: str) -> str:
+    text = str(text or "")
+    if marker not in text:
+        return ""
+    value = text.split(marker, 1)[1].split("。", 1)[0]
+    return shorten_sentence(value, 56)
+
+
+def compact_data_text(text: str) -> str:
+    text = str(text or "")
+    if "数据缺口共" in text:
+        tail = text.split("数据缺口共", 1)[1].split("。", 1)[0]
+        return shorten_sentence(f"数据缺口共{tail}", 64)
+    return shorten_sentence(text, 64)
+
+
+def shorten_sentence(text: str, max_len: int = 56) -> str:
+    text = " ".join(str(text or "").split())
+    if len(text) <= max_len:
+        return text
+    return text[:max_len].rstrip("，。；、 ") + "…"
 
 
 def build_action_notes(gap_analysis: dict) -> list[str]:

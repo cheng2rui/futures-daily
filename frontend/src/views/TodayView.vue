@@ -29,10 +29,14 @@
         <div v-for="flag in report.risk_flags" :key="flag" class="risk-chip">⚠ {{ flag }}</div>
       </div>
 
-      <div class="report-sections">
-        <div v-for="section in reportSections" :key="section.title" class="report-section" :class="`tone-${section.tone || 'neutral'}`">
-          <div class="section-kicker">{{ section.title }}</div>
-          <p>{{ section.body }}</p>
+      <div v-if="reportBrief" class="brief-card">
+        <div class="brief-title">{{ reportBrief.title }}</div>
+        <p>{{ reportBrief.conclusion }}</p>
+        <div class="brief-bullets">
+          <div v-for="item in reportBrief.bullets" :key="item.label" class="brief-bullet">
+            <b>{{ item.label }}</b>
+            <span>{{ item.text }}</span>
+          </div>
         </div>
       </div>
 
@@ -126,7 +130,7 @@ const marketSignals = computed(() => [
 ])
 const activeSector = computed(() => { const x = [...sectorBreadth.value].sort((a, b) => Number(b.volume || 0) - Number(a.volume || 0))[0]; return x ? `${x.name} ${fmtNum(x.volume)}` : '-' })
 const sourceTip = computed(() => { const quality = report.value.data_quality; if (!quality || quality.status === 'empty') return ''; const bad = (quality.exchanges || []).filter(x => x.status !== 'ok'); if (!bad.length) return `数据来源：交易所/AKShare/增强源，覆盖 ${quality.coverage_pct ?? 0}%。`; return `数据来源提示：${bad.map(x => `${exchangeName(x.exchange)} ${statusLabel(x.status)}`).join('、')}；部分交易所可能使用 fallback 或暂无数据。` })
-const reportSections = computed(() => report.value.report_sections || [])
+const reportBrief = computed(() => report.value.report_brief || null)
 
 const sectorVolumeOption = computed(() => barOption({ names: sectorBreadth.value.map(x => x.name), series: [
   { name: '成交量', data: sectorBreadth.value.map(x => Number(x.volume || 0)), color: '#3f5efb' },
@@ -177,14 +181,13 @@ watch(() => route.query.date, load)
 .notice.error { background:#fff0f0; color:#bd3434; border-color:#ffd6d6; }
 .risk-strip { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
 .risk-chip { background:#fff7e6; border:1px solid #ffd591; color:#8a5200; padding:9px 12px; border-radius:999px; font-weight:700; }
-.report-sections { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:16px 0; }
-.report-section { background:#fff; border:1px solid #e8edf5; border-radius:18px; padding:16px; box-shadow:0 10px 24px rgba(15,23,42,.06); border-top:4px solid #94a3b8; }
-.report-section.tone-positive { border-top-color:#16c79a; }
-.report-section.tone-negative { border-top-color:#e94560; }
-.report-section.tone-warning { border-top-color:#f5a623; }
-.report-section.tone-info { border-top-color:#3f5efb; }
-.section-kicker { font-weight:900; color:#0f172a; margin-bottom:8px; }
-.report-section p { margin:0; color:#475569; line-height:1.75; font-size:13px; }
+.brief-card { margin:16px 0; background:#fff; border:1px solid #e8edf5; border-radius:20px; padding:18px; box-shadow:0 10px 24px rgba(15,23,42,.06); }
+.brief-title { font-size:18px; font-weight:900; color:#0f172a; margin-bottom:8px; }
+.brief-card p { margin:0; color:#334155; line-height:1.75; }
+.brief-bullets { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:14px; }
+.brief-bullet { background:#f8fafc; border:1px solid #eef2f7; border-radius:14px; padding:12px; display:grid; gap:6px; }
+.brief-bullet b { color:#1e293b; }
+.brief-bullet span { color:#64748b; line-height:1.55; font-size:13px; }
 .layout-grid, .chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
 .layout-grid.three { grid-template-columns:1fr 1fr 1fr; }
 .signal-stack { display:grid; gap:12px; }
@@ -205,6 +208,6 @@ watch(() => route.query.date, load)
 .empty-state { padding:28px; text-align:center; color:#888; background:#fafafa; border-radius:14px; }
 .empty-state.large { margin:18px 0; padding:48px; }
 .empty-state.small { padding:18px; }
-@media (max-width:1100px) { .metric-grid, .layout-grid, .layout-grid.three, .chart-grid, .report-sections { grid-template-columns:1fr 1fr; } }
-@media (max-width:760px) { .hero { flex-direction:column; } .metric-grid, .layout-grid, .layout-grid.three, .chart-grid, .report-sections { grid-template-columns:1fr; } .hero h1 { font-size:26px; } }
+@media (max-width:1100px) { .metric-grid, .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets { grid-template-columns:1fr 1fr; } }
+@media (max-width:760px) { .hero { flex-direction:column; } .metric-grid, .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets { grid-template-columns:1fr; } .hero h1 { font-size:26px; } }
 </style>

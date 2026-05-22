@@ -97,7 +97,7 @@ def ensure_report_payload(db: Session, report: Report) -> dict:
         payload = {}
     meta = payload.get("meta") if isinstance(payload, dict) else {}
     schema_version = int((meta or {}).get("report_schema_version") or 0)
-    if schema_version < REPORT_SCHEMA_VERSION or not payload.get("report_sections"):
+    if schema_version < REPORT_SCHEMA_VERSION or not payload.get("report_sections") or not payload.get("report_brief"):
         report = build_report(db, report.trade_date)
         payload = json.loads(report.report_json or "{}")
     return payload
