@@ -1,29 +1,31 @@
 <template>
   <div class="today">
-    <div class="hero">
-      <div>
-        <div class="eyebrow">Futures Daily · {{ displayDate }}</div>
-        <h1>{{ report.overview?.stage || (viewingDate ? '历史期货日报' : '今日期货日报') }}</h1>
-        <p>{{ report.overview?.summary || '暂无日报数据。点击右上角生成日报，系统会采集行情、席位和结构化归档后生成市场概览。' }}</p>
-      </div>
-      <div class="actions">
-        <router-link v-if="viewingDate" to="/" class="secondary">查看最新</router-link>
-        <button class="secondary" :disabled="!pushText || loading" @click="copyPushDigest">{{ copyButtonText }}</button>
-        <button class="secondary" :disabled="!report.date || pushing" @click="pushReport">{{ pushButtonText }}</button>
-        <button class="primary" :disabled="loading" @click="generate">{{ generateButtonText }}</button>
-      </div>
-    </div>
+    <TodayHero
+      :report="report"
+      :display-date="displayDate"
+      :viewing-date="viewingDate"
+      :push-text="pushText"
+      :loading="loading"
+      :pushing="pushing"
+      :copy-button-text="copyButtonText"
+      :push-button-text="pushButtonText"
+      :generate-button-text="generateButtonText"
+      @copy-push-digest="copyPushDigest"
+      @push-report="pushReport"
+      @generate="generate"
+    />
 
     <div v-if="error" class="notice error">{{ error }}</div>
     <div v-else-if="notice" class="notice success">{{ notice }}</div>
     <div v-else-if="sourceTip" class="notice">{{ sourceTip }}</div>
 
-    <div class="metric-grid">
-      <div class="metric-card accent-red"><div class="metric-label">综合温度</div><div class="metric-main">{{ report.overview?.score ?? 0 }}</div><div class="metric-sub">{{ report.overview?.heat || '暂无热度' }}</div></div>
-      <div class="metric-card accent-green"><div class="metric-label">上涨 / 下跌</div><div class="metric-main">{{ dashboardMarket.up_count ?? 0 }} / {{ dashboardMarket.down_count ?? 0 }}</div><div class="metric-sub">主力合约 {{ dashboardMarket.main_contracts ?? dashboardMarket.liquid_contracts ?? dashboardMarket.contracts ?? 0 }} 个</div></div>
-      <div class="metric-card accent-blue"><div class="metric-label">成交量</div><div class="metric-main">{{ fmtNum(dashboardMarket.volume) }}</div><div class="metric-sub">{{ activeDashboardMode === 'intraday' ? '阶段快照' : '总成交' }}</div></div>
-      <div class="metric-card accent-orange"><div class="metric-label">数据可信度</div><div class="metric-main">{{ qualityCoveragePct }}%</div><div class="metric-sub">{{ qualityOkText }}</div></div>
-    </div>
+    <MetricGrid
+      :report="report"
+      :dashboard-market="dashboardMarket"
+      :active-dashboard-mode="activeDashboardMode"
+      :quality-coverage-pct="qualityCoveragePct"
+      :quality-ok-text="qualityOkText"
+    />
 
     <div v-if="isEmptyReport" class="empty-state large">暂无日报数据。建议先生成日报，再查看市场结构、席位信号和数据资产。</div>
 
@@ -117,6 +119,11 @@
                 <div v-if="item.dimensions?.length" class="dimension-tags">
                   <span v-for="dim in item.dimensions" :key="dim.name">{{ dim.name }} {{ dim.score }}</span>
                 </div>
+                <div v-if="item.evidence_chain?.length" class="evidence-chain">
+                  <div v-for="ev in visibleItems(item.evidence_chain || [], card, 3)" :key="ev.key || ev.label" class="evidence-row">
+                    <b>{{ ev.label }}</b><span>{{ ev.text }}</span>
+                  </div>
+                </div>
                 <ul><li v-for="reason in visibleItems(item.reasons || [], card, 2)" :key="reason">{{ reason }}</li></ul>
                 <div v-if="isCardExpanded(card.id) && item.news_viewpoint" class="viewpoint-chip" :class="`bias-${item.news_viewpoint.bias || 'neutral'}`">资讯观点：{{ item.news_viewpoint.summary }}</div>
                 <div v-if="isCardExpanded(card.id)" class="watch-next">次日观察：{{ item.watch_next }}</div>
@@ -149,6 +156,11 @@
                   <em>{{ item.change_pct == null ? '-' : signedPct(item.change_pct) }}</em>
                 </div>
                 <div class="watch-digest-signal">{{ item.signal || item.summary }}</div>
+                <div v-if="item.evidence_chain?.length" class="evidence-chain compact">
+                  <div v-for="ev in visibleItems(item.evidence_chain || [], card, 3)" :key="ev.key || ev.label" class="evidence-row">
+                    <b>{{ ev.label }}</b><span>{{ ev.text }}</span>
+                  </div>
+                </div>
                 <ul v-if="item.reasons?.length"><li v-for="reason in visibleItems(item.reasons || [], card, 2)" :key="reason">{{ reason }}</li></ul>
                 <div v-if="isCardExpanded(card.id) && item.news_viewpoint" class="viewpoint-chip" :class="`bias-${item.news_viewpoint.bias || 'neutral'}`">{{ item.news_viewpoint.summary }}</div>
                 <div v-if="isCardExpanded(card.id)" class="watch-next">次日观察：{{ item.watch_next }}</div>
@@ -253,7 +265,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api.js'
 import BaseChart from '../components/BaseChart.vue'
-import SectionCard from '../components/SectionCard.vue'
+import MetricGrid from '../components/today/MetricGrid.vue'
+import TodayHero from '../components/today/TodayHero.vue'
 import SimpleTable from '../components/SimpleTable.vue'
 import { contractName, exchangeName } from '../exchange.js'
 import { statusLabel } from '../labels.js'
@@ -607,21 +620,6 @@ watch(intradayAutoRefresh, startIntradayTimer)
 
 <style scoped>
 .today { max-width:1480px; margin:0 auto; }
-.hero { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; padding:26px; border-radius:24px; color:#fff; background:radial-gradient(circle at top left,#3f5efb 0,#1a1a2e 42%,#111827 100%); box-shadow:0 18px 48px rgba(17,24,39,.18); }
-.eyebrow { color:#a8c7ff; font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
-.hero h1 { margin:8px 0 10px; font-size:32px; line-height:1.2; }
-.hero p { max-width:860px; margin:0; color:#dbeafe; line-height:1.8; }
-.actions { display:flex; gap:10px; align-items:center; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end; }
-.primary { background:#e94560; color:white; border:0; border-radius:12px; padding:11px 18px; font-weight:800; cursor:pointer; box-shadow:0 10px 28px rgba(233,69,96,.32); }
-.secondary { background:rgba(255,255,255,.12); color:#fff; border:1px solid rgba(255,255,255,.28); border-radius:12px; padding:10px 16px; font-weight:800; text-decoration:none; cursor:pointer; }
-.primary:disabled, .secondary:disabled { opacity:.6; cursor:wait; }
-.metric-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin:18px 0; }
-.metric-card { background:#fff; border-radius:20px; padding:20px; box-shadow:0 12px 30px rgba(15,23,42,.07); border:1px solid #eef2f7; position:relative; overflow:hidden; }
-.metric-card::after { content:''; position:absolute; inset:auto -30px -45px auto; width:120px; height:120px; border-radius:999px; opacity:.12; background:var(--accent); }
-.accent-red { --accent:#e94560; } .accent-green { --accent:#16c79a; } .accent-blue { --accent:#3f5efb; } .accent-orange { --accent:#f5a623; }
-.metric-label { color:#64748b; font-size:13px; font-weight:800; }
-.metric-main { margin-top:8px; color:#0f172a; font-size:30px; font-weight:900; }
-.metric-sub { margin-top:6px; color:#94a3b8; font-size:13px; }
 .notice { margin:16px 0; padding:12px 14px; background:#f6f8ff; color:#526184; border:1px solid #e4e9ff; border-radius:12px; }
 .notice.success { background:#f0fff5; color:#0f8a55; border-color:#bfeecf; }
 .notice.error { background:#fff0f0; color:#bd3434; border-color:#ffd6d6; }
@@ -679,6 +677,11 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .bias-positive { color:#d93655; } .bias-negative { color:#12966b; } .bias-mixed { color:#b45309; } .bias-neutral { color:#475569; }
 .dimension-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
 .dimension-tags span { color:#526184; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:999px; padding:4px 7px; font-size:12px; font-weight:800; }
+.evidence-chain { display:grid; gap:7px; margin-top:10px; padding:9px; border-radius:13px; background:#f8fafc; border:1px solid #edf2f7; }
+.evidence-chain.compact { padding:8px; }
+.evidence-row { display:grid; grid-template-columns:72px 1fr; gap:8px; align-items:start; font-size:12px; line-height:1.45; }
+.evidence-row b { color:#3157d5; white-space:nowrap; }
+.evidence-row span { color:#475569; }
 .abnormal-card ul { margin:8px 0 0; padding-left:18px; color:#475569; line-height:1.55; font-size:13px; }
 .viewpoint-chip { margin-top:10px; border-radius:12px; padding:9px; background:#f8fafc; border:1px solid #e2e8f0; font-size:13px; line-height:1.55; color:#475569; }
 .related-news { display:grid; gap:6px; margin-top:10px; }
@@ -749,6 +752,6 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .empty-state { padding:28px; text-align:center; color:#888; background:#fafafa; border-radius:14px; }
 .empty-state.large { margin:18px 0; padding:48px; }
 .empty-state.small { padding:18px; }
-@media (max-width:1100px) { .dashboard-masonry { column-count:2; } .metric-grid, .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr 1fr; } }
-@media (max-width:760px) { .hero, .dashboard-toolbar { flex-direction:column; align-items:stretch; } .dashboard-masonry { column-count:1; } .metric-grid, .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr; } .hero h1 { font-size:26px; } }
+@media (max-width:1100px) { .dashboard-masonry { column-count:2; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr 1fr; } }
+@media (max-width:760px) { .dashboard-toolbar { flex-direction:column; align-items:stretch; } .dashboard-masonry { column-count:1; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr; } }
 </style>

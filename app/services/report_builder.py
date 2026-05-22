@@ -318,6 +318,22 @@ def build_abnormal_cards(dataset: dict, limit: int = 12, news_digest: dict | Non
             continue
         signal, bias = classify_abnormal_signal(chg, net_delta, warehouse_delta, basis_rate)
         reasons = build_reasons(chg, net_delta, long_short_ratio, warehouse_delta, warehouse_ratio, basis_rate, capital_yi)
+        watch_next = build_watch_next(chg, net_delta, warehouse_delta, basis_rate, related_news)
+        evidence_chain = build_evidence_chain(
+            chg=chg,
+            close=safe_num(row.get("main_close")),
+            volume=volume,
+            oi=oi,
+            net_delta=net_delta,
+            long_short_ratio=long_short_ratio,
+            warehouse_delta=warehouse_delta,
+            warehouse_ratio=warehouse_ratio,
+            basis_rate=basis_rate,
+            capital_yi=capital_yi,
+            viewpoint=viewpoint,
+            related_news=related_news,
+            watch_next=watch_next,
+        )
         cards.append({
             "exchange": row.get("exchange"),
             "symbol": row.get("symbol"),
@@ -329,7 +345,8 @@ def build_abnormal_cards(dataset: dict, limit: int = 12, news_digest: dict | Non
             "signal": signal,
             "reasons": reasons[:6],
             "dimensions": dimensions,
-            "watch_next": build_watch_next(chg, net_delta, warehouse_delta, basis_rate, related_news),
+            "evidence_chain": evidence_chain,
+            "watch_next": watch_next,
             "related_news": related_news,
             "news_viewpoint": viewpoint,
             "source_quality": row.get("quality") or {},
@@ -402,6 +419,76 @@ def build_reasons(chg, net_delta, long_short_ratio, warehouse_delta, warehouse_r
     return reasons or ["价格/持仓/外部数据出现可观察变化"]
 
 
+def build_evidence_chain(
+    *,
+    chg,
+    close,
+    volume,
+    oi,
+    net_delta,
+    long_short_ratio,
+    warehouse_delta,
+    warehouse_ratio,
+    basis_rate,
+    capital_yi,
+    viewpoint: dict | None,
+    related_news: list[dict] | None,
+    watch_next: str,
+) -> list[dict]:
+    """Return a compact price → position → physical → news → next-day evidence chain."""
+    chain: list[dict] = []
+    price_bits = []
+    if close is not None:
+        price_bits.append(f"收盘 {close:g}")
+    if chg is not None:
+        price_bits.append(f"涨跌 {signed_pct(chg)}")
+    if volume is not None:
+        price_bits.append(f"成交 {format_compact_num(volume)}")
+    if oi is not None:
+        price_bits.append(f"持仓 {format_compact_num(oi)}")
+    chain.append({"key": "price", "label": "价格/量仓", "text": "；".join(price_bits) or "暂无价格/量仓证据"})
+
+    seat_bits = []
+    if net_delta is not None:
+        seat_bits.append(f"净变化 {signed_num(net_delta)}")
+    if long_short_ratio is not None:
+        seat_bits.append(f"多空比 {long_short_ratio:.2f}")
+    chain.append({"key": "seat", "label": "席位", "text": "；".join(seat_bits) or "暂无席位证据"})
+
+    physical_bits = []
+    if warehouse_delta is not None:
+        text = f"仓单 {signed_num(warehouse_delta)}"
+        if warehouse_ratio is not None:
+            text += f"（{signed_pct(warehouse_ratio)}）"
+        physical_bits.append(text)
+    if basis_rate is not None:
+        physical_bits.append(f"基差率 {signed_pct(basis_rate)}")
+    if capital_yi is not None:
+        physical_bits.append(f"沉淀资金 {capital_yi:.2f}亿")
+    chain.append({"key": "physical", "label": "基差/仓单", "text": "；".join(physical_bits) or "暂无基差/仓单证据"})
+
+    news_text = "暂无资讯观点"
+    if viewpoint and viewpoint.get("summary"):
+        news_text = str(viewpoint.get("summary"))
+    elif related_news:
+        first = related_news[0] or {}
+        news_text = f"关联资讯 {len(related_news)} 条：{first.get('title') or first.get('source') or '待复核'}"
+    chain.append({"key": "news", "label": "资讯观点", "text": news_text})
+    chain.append({"key": "next", "label": "明日观察", "text": watch_next or "观察价格、持仓与资讯是否继续验证。"})
+    return chain
+
+
+def format_compact_num(value) -> str:
+    n = safe_num(value)
+    if n is None:
+        return "-"
+    if abs(n) >= 100000000:
+        return f"{n / 100000000:.2f}亿"
+    if abs(n) >= 10000:
+        return f"{n / 10000:.1f}万"
+    return f"{n:.0f}"
+
+
 
 def build_watch_digest(dataset: dict, watch_symbols: list[WatchSymbol], abnormal_cards: list[dict], news_digest: dict | None = None) -> dict:
     """Build a focused daily report for the user's watchlist varieties."""
@@ -445,7 +532,27 @@ def build_watch_digest(dataset: dict, watch_symbols: list[WatchSymbol], abnormal
             safe_num(basis.get("basis_rate")),
             safe_num(capital.get("amount_yi")),
         )
-        signal = card.get("signal") if card else classify_abnormal_signal(chg, net_delta, safe_num(warehouse.get("increase_number")), safe_num(basis.get("basis_rate")))[0]
+        warehouse_delta = safe_num(warehouse.get("increase_number"))
+        warehouse_ratio = safe_num(warehouse.get("increase_ratio"))
+        basis_rate = safe_num(basis.get("basis_rate"))
+        capital_yi = safe_num(capital.get("amount_yi"))
+        signal = card.get("signal") if card else classify_abnormal_signal(chg, net_delta, warehouse_delta, basis_rate)[0]
+        watch_next = (card or {}).get("watch_next") or build_watch_next(chg, net_delta, warehouse_delta, basis_rate, news_by_symbol.get(symbol, []))
+        evidence_chain = (card or {}).get("evidence_chain") or build_evidence_chain(
+            chg=chg,
+            close=safe_num((row or {}).get("main_close")),
+            volume=safe_num((row or {}).get("total_volume") or (row or {}).get("main_volume")),
+            oi=safe_num((row or {}).get("total_open_interest") or (row or {}).get("main_open_interest")),
+            net_delta=net_delta,
+            long_short_ratio=safe_num(archive.get("longShortRatio")) if archive else None,
+            warehouse_delta=warehouse_delta,
+            warehouse_ratio=warehouse_ratio,
+            basis_rate=basis_rate,
+            capital_yi=capital_yi,
+            viewpoint=viewpoint,
+            related_news=news_by_symbol.get(symbol, []),
+            watch_next=watch_next,
+        )
         items.append({
             "symbol": symbol,
             "name": (row or {}).get("name") or get_variety_name(symbol),
@@ -459,9 +566,10 @@ def build_watch_digest(dataset: dict, watch_symbols: list[WatchSymbol], abnormal
             "signal": signal,
             "bias": (card or {}).get("bias") or (viewpoint or {}).get("bias") or "neutral",
             "reasons": reasons[:6],
+            "evidence_chain": evidence_chain,
             "news_viewpoint": viewpoint,
             "related_news": news_by_symbol.get(symbol, [])[:3],
-            "watch_next": (card or {}).get("watch_next") or build_watch_next(chg, net_delta, safe_num(warehouse.get("increase_number")), safe_num(basis.get("basis_rate")), news_by_symbol.get(symbol, [])),
+            "watch_next": watch_next,
             "status": "ok",
         })
     ok_items = [x for x in items if x.get("status") == "ok"]
