@@ -20,6 +20,8 @@ from app.services.structure import build_structure, pct_change, sector_for
 from app.version import VERSION
 
 REPORT_SCHEMA_VERSION = 2
+LIQUID_MIN_VOLUME = 1000
+LIQUID_MIN_OPEN_INTEREST = 1000
 
 
 def notional_value(bar: DailyBar) -> float | None:
@@ -33,14 +35,16 @@ def build_report(db: Session, trade_date: str) -> Report:
     bars = list(db.scalars(select(DailyBar).where(DailyBar.trade_date == trade_date)))
     changes = [(bar, pct_change(bar)) for bar in bars]
     valid = [(bar, chg) for bar, chg in changes if chg is not None]
+    liquid_valid = [(bar, chg) for bar, chg in valid if is_liquid_bar(bar)]
+    ranking_valid = liquid_valid or valid
 
-    up_count = sum(1 for _, chg in valid if chg > 0)
-    down_count = sum(1 for _, chg in valid if chg < 0)
+    up_count = sum(1 for _, chg in ranking_valid if chg > 0)
+    down_count = sum(1 for _, chg in ranking_valid if chg < 0)
     turnover = sum((bar.turnover or 0) for bar in bars)
     volume = sum((bar.volume or 0) for bar in bars)
 
     sector_bucket: dict[str, list[float]] = defaultdict(list)
-    for bar, chg in valid:
+    for bar, chg in ranking_valid:
         sector_bucket[sector_for(bar.symbol)].append(chg)
     sectors = [
         {"name": name, "avg_change": round(sum(vals) / len(vals), 2), "count": len(vals)}
@@ -48,8 +52,8 @@ def build_report(db: Session, trade_date: str) -> Report:
     ]
     sectors.sort(key=lambda x: x["avg_change"], reverse=True)
 
-    gainers = sorted(valid, key=lambda x: x[1], reverse=True)[:10]
-    losers = sorted(valid, key=lambda x: x[1])[:10]
+    gainers = sorted(ranking_valid, key=lambda x: x[1], reverse=True)[:10]
+    losers = sorted(ranking_valid, key=lambda x: x[1])[:10]
     volume_top = sorted(bars, key=lambda x: x.volume or 0, reverse=True)[:10]
     oi_top = sorted(bars, key=lambda x: x.open_interest or 0, reverse=True)[:10]
 
@@ -133,7 +137,7 @@ def build_report(db: Session, trade_date: str) -> Report:
             "risk": risk,
             "summary": report_sections[0]["body"],
         },
-        "market": {"up_count": up_count, "down_count": down_count, "turnover": turnover, "volume": volume, "contracts": len(bars)},
+        "market": {"up_count": up_count, "down_count": down_count, "turnover": turnover, "volume": volume, "contracts": len(bars), "liquid_contracts": len(ranking_valid)},
         "sectors": sectors,
         "rankings": {
             "gainers": [bar_item(b, c) for b, c in gainers],
@@ -179,6 +183,10 @@ def build_report(db: Session, trade_date: str) -> Report:
     return report
 
 
+def is_liquid_bar(bar: DailyBar) -> bool:
+    return (bar.volume or 0) >= LIQUID_MIN_VOLUME and (bar.open_interest or 0) >= LIQUID_MIN_OPEN_INTEREST
+
+
 def build_report_sections(
     *,
     up_count: int,
@@ -209,7 +217,7 @@ def build_report_sections(
         {
             "title": "市场结论",
             "tone": "neutral" if stage == "分化" else "positive" if stage == "偏强" else "negative",
-            "body": f"当前市场状态为{stage}，综合分 {score}。可计算涨跌的合约中，上涨 {up_count} 个、下跌 {down_count} 个；活跃度主要集中在 {active_text}。",
+            "body": f"当前市场状态为{stage}，综合分 {score}。流动性过滤后的合约中，上涨 {up_count} 个、下跌 {down_count} 个；活跃度主要集中在 {active_text}。",
         },
         {
             "title": "主线机会",
