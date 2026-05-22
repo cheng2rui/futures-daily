@@ -52,11 +52,12 @@
               <span>{{ fmt(job.started_at) }}</span>
               <small>{{ duration(job) }}</small>
             </div>
-            <div class="job-message">{{ job.message || '-' }}</div>
+            <div class="job-message" :class="failureText(job) ? 'has-failure' : ''">{{ failureText(job) || job.message || '-' }}</div>
             <button class="expand">{{ expandedIds.includes(job.id) ? '收起' : '详情' }}</button>
           </div>
           <div v-if="expandedIds.includes(job.id)" class="job-detail">
             <div class="summary-line">{{ detail(job) }}</div>
+            <div v-if="failureText(job)" class="failure-line">失败原因：{{ failureText(job) }}</div>
             <div v-if="parsed(job)?.collect" class="exchange-results">
               <div v-for="x in parsed(job).collect.results || []" :key="`c-${x.exchange}`" class="result-row" :class="x.error ? 'bad' : 'ok'">
                 <b>{{ x.exchange }}</b><span>行情 {{ x.saved ?? 0 }}/{{ x.rows ?? 0 }} 行</span><small>{{ x.error || '正常' }}</small>
@@ -99,7 +100,7 @@ const filteredJobs = computed(() => jobs.value.filter(j => {
   if (statusFilter.value !== 'all' && j.status !== statusFilter.value) return false
   const q = query.value.trim().toLowerCase()
   if (!q) return true
-  return [j.name, j.status, j.trade_date, j.message].some(x => String(x || '').toLowerCase().includes(q))
+  return [j.name, j.status, j.trade_date, j.message, j.result_json, failureText(j)].some(x => String(x || '').toLowerCase().includes(q))
 }))
 
 async function load() {
@@ -146,6 +147,29 @@ function channelResult(x) {
   const reason = x.error || x.reason || x.body || (x.status_code ? `HTTP ${x.status_code}` : '失败')
   return `${name}：${String(reason).slice(0, 36)}`
 }
+function failureText(job) {
+  if (job.status === 'success') return ''
+  const data = parsed(job)
+  const errors = []
+  for (const group of ['collect', 'seats']) {
+    for (const item of data?.[group]?.results || []) {
+      if (item?.error) errors.push(`${item.exchange || group} ${kindLabel(group === 'collect' ? 'daily' : 'seat_rank')}：${normalizeError(item.error)}`)
+    }
+  }
+  for (const item of data?.dispatch || []) {
+    if (item?.ok === false) errors.push(`${channelLabel(item.channel)}：${normalizeError(item.error || item.reason || item.body || item.status_code)}`)
+  }
+  if (data?.error) errors.push(normalizeError(data.error))
+  if (!errors.length && job.status === 'failed') return normalizeError(job.message || '任务失败，详情见原始结果或服务日志')
+  return errors.slice(0, 3).join('；')
+}
+function normalizeError(value) {
+  const text = String(value || 'unknown').replace(/\s+/g, ' ').trim()
+  if (text.includes('fallback unavailable')) return '备用源不可用，需等待官方恢复或商业源'
+  if (text.includes('not_collected')) return '未采集到数据'
+  if (text.includes('timeout')) return '请求超时'
+  return text.slice(0, 120)
+}
 function channelLabel(channel) { return ({ telegram: 'Telegram', wecom: '企业微信', wechatbot: 'WeChatBot' })[channel] || channel || '-' }
 function showRaw(job) { const data = parsed(job); return data && !data.collect && !data.seats && !data.dispatch }
 function prettyJson(raw) { try { return JSON.stringify(JSON.parse(raw || '{}'), null, 2) } catch { return raw || '' } }
@@ -171,9 +195,11 @@ onMounted(load)
 .job-status { font-weight:900; color:#334155; }
 .job-date, .job-time, .job-message { color:#475569; font-size:13px; }
 .job-message { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.job-message.has-failure { color:#b91c1c; font-weight:800; }
 .expand { border:0; border-radius:999px; padding:7px 10px; background:#f1f5ff; color:#3157d5; font-weight:900; cursor:pointer; }
 .job-detail { border-top:1px solid #eef2f7; background:#fbfdff; padding:13px 16px; display:grid; gap:10px; }
 .summary-line { color:#334155; font-weight:800; }
+.failure-line { color:#991b1b; background:#fff1f2; border:1px solid #fecdd3; border-radius:12px; padding:10px 12px; line-height:1.55; font-weight:800; }
 .exchange-results { display:grid; gap:7px; }
 .result-row { display:grid; grid-template-columns:90px 150px 1fr; gap:10px; align-items:center; padding:8px 10px; border-radius:10px; background:#fff; border:1px solid #eef2f7; }
 .result-row.ok { border-left:4px solid #16a34a; } .result-row.bad { border-left:4px solid #dc2626; } .result-row.skip { border-left:4px solid #94a3b8; }
