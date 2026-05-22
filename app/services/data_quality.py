@@ -195,14 +195,19 @@ def _gap_note(latest_gap: dict[tuple[str, str], DataGap], exchange: str) -> str:
 
 def _unrecoverable_kinds(exchange: str, daily: dict[str, Any], seat: dict[str, Any], fallback: dict[str, Any]) -> list[str]:
     seat_error = str(seat.get("error") or fallback.get("error") or "").lower()
-    if exchange == "DCE" and not seat["rows"] and "fallback unavailable" in seat_error:
+    # Only mark as unrecoverable if the exchange is DCE, has no seat data, and fallback genuinely failed.
+    # If daily data exists, this is a partial (recoverable) issue, not a total failure.
+    if exchange == "DCE" and not seat["rows"] and "fallback unavailable" in seat_error and not daily["rows"]:
         return ["seat_rank"]
     return []
 
 
 def _exchange_note(daily: dict[str, Any], seat: dict[str, Any], fallback: dict[str, Any], unrecoverable_kinds: list[str] | None = None) -> str:
     if unrecoverable_kinds:
-        return "席位暂无公开可用备用源，标记为不可恢复；需要官方恢复或商业数据源。"
+        note = "席位暂无公开备用源，需官方恢复或商业数据源。"
+        if daily["rows"]:
+            note = "行情正常；席位" + note
+        return note
     if not daily["rows"] and not seat["rows"] and not fallback["rows"]:
         return "行情/席位均未采集"
     if daily["rows"] and not daily["ok"]:

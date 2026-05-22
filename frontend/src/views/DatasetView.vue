@@ -95,7 +95,8 @@ const varietyRows = computed(() => filteredRows.value.map(x => [
 ]))
 const filteredRows = computed(() => {
   const q = keyword.value.trim().toUpperCase()
-  return (facts.value.length ? facts.value : data.value.rows || []).filter(x => {
+  const source = facts.value.length ? facts.value : data.value.rows || []
+  return source.filter(x => {
     if (q && !`${x.exchange} ${x.symbol} ${x.name} ${x.main_contract}`.toUpperCase().includes(q)) return false
     if (qualityFilter.value === 'seat_missing' && qualityValue(x, 'seat_rank') !== 'missing') return false
     if (qualityFilter.value === 'archive_missing' && qualityValue(x, 'archive_signal') !== 'missing') return false

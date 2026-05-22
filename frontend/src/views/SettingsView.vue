@@ -339,4 +339,5 @@ onMounted(load)
 .danger { border: 0; background: #fff1f0; color: #cf1322; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
 .empty { color: #999; padding: 12px; text-align: center; }
 @media (max-width: 1000px) { .grid-2, .inline-form, .form-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .push-result { grid-template-columns:1fr; } .form-actions { flex-direction:column; } .form-actions button { width:100%; } }
 </style>
