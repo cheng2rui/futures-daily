@@ -30,6 +30,14 @@
     <div v-if="isEmptyReport" class="empty-state large">暂无日报数据。建议先生成日报，再查看市场变化、席位动向和数据完整度。</div>
 
     <template v-else>
+      <section class="daily-workbench">
+        <article v-for="item in workbenchCards" :key="item.title" class="workbench-card" :class="item.tone">
+          <div class="workbench-label">{{ item.title }}</div>
+          <div class="workbench-main">{{ item.main }}</div>
+          <div class="workbench-sub">{{ item.sub }}</div>
+        </article>
+      </section>
+
       <div v-if="report.risk_flags?.length" class="risk-strip">
         <div v-for="flag in report.risk_flags" :key="flag" class="risk-chip">⚠ {{ flag }}</div>
       </div>
@@ -115,18 +123,23 @@
                   <div><b>{{ item.name || item.symbol }}</b><span>{{ item.symbol }} · {{ exchangeName(item.exchange) }} · {{ item.sector || '-' }}</span></div>
                   <em>{{ item.main_contract || '-' }}</em>
                 </div>
+                <div class="card-section-label">结论</div>
                 <div class="abnormal-signal" :class="`bias-${item.bias || 'neutral'}`">{{ item.signal }}</div>
-                <div v-if="item.dimensions?.length" class="dimension-tags">
-                  <span v-for="dim in item.dimensions" :key="dim.name">{{ dim.name }} {{ dim.score }}</span>
-                </div>
-                <div v-if="item.evidence_chain?.length" class="evidence-chain">
-                  <div v-for="ev in visibleItems(item.evidence_chain || [], card, 3)" :key="ev.key || ev.label" class="evidence-row">
+                <div v-if="item.evidence_chain?.length" class="evidence-chain prominent">
+                  <div class="card-section-label evidence-title">主要证据</div>
+                  <div v-for="ev in visibleItems(item.evidence_chain || [], card, 4)" :key="ev.key || ev.label" class="evidence-row">
                     <b>{{ ev.label }}</b><span>{{ ev.text }}</span>
                   </div>
                 </div>
-                <ul><li v-for="reason in visibleItems(item.reasons || [], card, 2)" :key="reason">{{ reason }}</li></ul>
+                <div v-if="item.dimensions?.length" class="dimension-tags">
+                  <span v-for="dim in item.dimensions" :key="dim.name">{{ dim.name }} {{ dim.score }}</span>
+                </div>
+                <div v-if="item.reasons?.length" class="reason-list">
+                  <div class="card-section-label">可能原因</div>
+                  <ul><li v-for="reason in visibleItems(item.reasons || [], card, 2)" :key="reason">{{ reason }}</li></ul>
+                </div>
                 <div v-if="isCardExpanded(card.id) && item.news_viewpoint" class="viewpoint-chip" :class="`bias-${item.news_viewpoint.bias || 'neutral'}`">资讯观点：{{ item.news_viewpoint.summary }}</div>
-                <div v-if="isCardExpanded(card.id)" class="watch-next">次日观察：{{ item.watch_next }}</div>
+                <div v-if="item.watch_next" class="watch-next"><b>明天看：</b>{{ item.watch_next }}</div>
               </div>
             </div>
           </template>
@@ -313,7 +326,7 @@ const dashboardEditing = ref(false)
 const draggingCardId = ref('')
 const expandedDashboardCards = ref([])
 const activeDashboardMode = ref(loadDashboardMode())
-const appVersion = ref('0.2.1')
+const appVersion = ref('0.2.3')
 const viewingDate = computed(() => route.query.date ? String(route.query.date) : '')
 const displayDate = computed(() => formatDate(report.value.date || viewingDate.value) || '暂无日期')
 const isEmptyReport = computed(() => !report.value.date && !report.value.overview?.summary)
@@ -324,6 +337,29 @@ const generateButtonText = computed(() => {
 const pushText = computed(() => report.value.push_digest?.brief || report.value.push_digest?.text || '')
 const copyButtonText = computed(() => copied.value ? '已复制' : '复制推送文案')
 const pushButtonText = computed(() => pushing.value ? '推送中...' : '推送日报')
+const topFocus = computed(() => abnormalCards.value[0] || watchDigestItems.value[0] || null)
+const topFocusText = computed(() => topFocus.value ? `${topFocus.value.name || topFocus.value.symbol || '重点品种'}：${topFocus.value.signal || topFocus.value.summary || '有变化，建议关注'}` : '暂无特别突出的品种异动')
+const tomorrowText = computed(() => {
+  const item = tomorrowWatch.value[0]
+  if (item) return `${item.title}：${item.body}`
+  const focus = topFocus.value
+  return focus?.watch_next ? `${focus.name || focus.symbol}：${focus.watch_next}` : '暂无明确观察项，可先关注自选品种和成交活跃品种'
+})
+const dataReadinessText = computed(() => {
+  const q = report.value.data_quality || {}
+  if (!q || q.status === 'empty') return { main: '暂无检查结果', sub: '生成日报后会显示数据是否齐全', tone: 'neutral' }
+  const pct = q.overall_coverage_pct ?? q.coverage_pct ?? 0
+  const bad = (q.exchanges || []).filter(x => x.status !== 'ok')
+  if (Number(pct) >= 80 && !bad.length) return { main: '数据够用', sub: `完整度 ${pct}%｜主要交易所已覆盖`, tone: 'good' }
+  if (Number(pct) >= 50) return { main: '部分缺失', sub: `完整度 ${pct}%｜${bad.length || '部分'} 个交易所需留意`, tone: 'warn' }
+  return { main: '谨慎解读', sub: `完整度 ${pct}%｜缺失较多，建议先补数据`, tone: 'bad' }
+})
+const workbenchCards = computed(() => [
+  { title: '今日一句话', main: report.value.overview?.stage || '暂无判断', sub: report.value.overview?.summary || '生成日报后会给出市场概览', tone: 'market' },
+  { title: '最值得关注', main: topFocus.value?.name || topFocus.value?.symbol || '暂无突出品种', sub: topFocusText.value, tone: 'focus' },
+  { title: '明天重点看', main: tomorrowWatch.value[0]?.title || topFocus.value?.name || '暂无明确重点', sub: tomorrowText.value, tone: 'tomorrow' },
+  { title: '数据够不够用', main: dataReadinessText.value.main, sub: dataReadinessText.value.sub, tone: dataReadinessText.value.tone },
+])
 
 const modeDashboardCards = computed(() => dashboardCards.value.filter(card => card.mode === activeDashboardMode.value))
 const visibleDashboardCards = computed(() => modeDashboardCards.value.filter(card => !hiddenDashboardCards.value.includes(card.id)))
@@ -626,6 +662,19 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .notice { margin:16px 0; padding:12px 14px; background:#f6f8ff; color:#526184; border:1px solid #e4e9ff; border-radius:12px; }
 .notice.success { background:#f0fff5; color:#0f8a55; border-color:#bfeecf; }
 .notice.error { background:#fff0f0; color:#bd3434; border-color:#ffd6d6; }
+.daily-workbench { display:grid; grid-template-columns:1.15fr 1fr 1fr .9fr; gap:14px; margin:18px 0; }
+.workbench-card { min-height:132px; border-radius:22px; padding:17px; color:#fff; box-shadow:0 14px 34px rgba(15,23,42,.12); display:flex; flex-direction:column; gap:8px; overflow:hidden; position:relative; }
+.workbench-card::after { content:''; position:absolute; width:140px; height:140px; right:-46px; bottom:-58px; border-radius:999px; background:rgba(255,255,255,.16); }
+.workbench-card.market { background:linear-gradient(135deg,#1d4ed8,#172554); }
+.workbench-card.focus { background:linear-gradient(135deg,#e94560,#7f1d1d); }
+.workbench-card.tomorrow { background:linear-gradient(135deg,#7c3aed,#312e81); }
+.workbench-card.good { background:linear-gradient(135deg,#059669,#064e3b); }
+.workbench-card.warn { background:linear-gradient(135deg,#d97706,#78350f); }
+.workbench-card.bad { background:linear-gradient(135deg,#dc2626,#7f1d1d); }
+.workbench-card.neutral { background:linear-gradient(135deg,#475569,#0f172a); }
+.workbench-label { color:rgba(255,255,255,.76); font-size:13px; font-weight:900; }
+.workbench-main { position:relative; z-index:1; font-size:21px; font-weight:950; line-height:1.25; }
+.workbench-sub { position:relative; z-index:1; color:rgba(255,255,255,.86); line-height:1.55; font-size:13px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
 .risk-strip { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
 .risk-chip { background:#fff7e6; border:1px solid #ffd591; color:#8a5200; padding:9px 12px; border-radius:999px; font-weight:700; }
 .dashboard-toolbar { display:flex; justify-content:space-between; gap:14px; align-items:center; margin:18px 0 12px; padding:14px 16px; border:1px solid #e8edf5; border-radius:18px; background:rgba(255,255,255,.86); box-shadow:0 10px 26px rgba(15,23,42,.05); backdrop-filter:blur(10px); }
@@ -676,21 +725,25 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .abnormal-head b { display:block; color:#0f172a; font-size:16px; }
 .abnormal-head span { display:block; margin-top:4px; color:#94a3b8; font-size:12px; }
 .abnormal-head em { color:#64748b; background:#f1f5f9; border-radius:999px; padding:4px 8px; font-style:normal; font-size:12px; white-space:nowrap; }
-.abnormal-signal { margin-top:11px; color:#1e293b; font-weight:900; line-height:1.55; }
+.card-section-label { margin-top:10px; color:#94a3b8; font-size:12px; font-weight:950; letter-spacing:.04em; }
+.abnormal-signal { margin-top:4px; color:#1e293b; font-weight:950; line-height:1.6; font-size:15px; }
 .bias-positive { color:#d93655; } .bias-negative { color:#12966b; } .bias-mixed { color:#b45309; } .bias-neutral { color:#475569; }
 .dimension-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
 .dimension-tags span { color:#526184; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:999px; padding:4px 7px; font-size:12px; font-weight:800; }
 .evidence-chain { display:grid; gap:7px; margin-top:10px; padding:9px; border-radius:13px; background:#f8fafc; border:1px solid #edf2f7; }
+.evidence-chain.prominent { background:#f8fbff; border-color:#dfe8ff; padding:11px; }
+.evidence-title { margin-top:0; color:#3157d5; }
 .evidence-chain.compact { padding:8px; }
 .evidence-row { display:grid; grid-template-columns:72px 1fr; gap:8px; align-items:start; font-size:12px; line-height:1.45; }
 .evidence-row b { color:#3157d5; white-space:nowrap; }
 .evidence-row span { color:#475569; }
-.abnormal-card ul { margin:8px 0 0; padding-left:18px; color:#475569; line-height:1.55; font-size:13px; }
+.reason-list ul, .abnormal-card ul { margin:7px 0 0; padding-left:18px; color:#475569; line-height:1.55; font-size:13px; }
 .viewpoint-chip { margin-top:10px; border-radius:12px; padding:9px; background:#f8fafc; border:1px solid #e2e8f0; font-size:13px; line-height:1.55; color:#475569; }
 .related-news { display:grid; gap:6px; margin-top:10px; }
 .related-news a { color:#3157d5; text-decoration:none; font-size:13px; line-height:1.45; }
 .related-news a:hover { text-decoration:underline; }
 .watch-next { margin-top:10px; color:#8a5200; background:#fff7e6; border:1px solid #ffe4ad; border-radius:12px; padding:9px; font-size:13px; line-height:1.55; }
+.watch-next b { margin-right:4px; }
 .news-list, .viewpoint-list { display:grid; gap:9px; }
 .viewpoint-item { border:1px solid #e8edf5; border-radius:14px; padding:11px 12px; background:#fff; }
 .viewpoint-item b { display:block; margin-bottom:5px; }
@@ -755,6 +808,6 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .empty-state { padding:28px; text-align:center; color:#888; background:#fafafa; border-radius:14px; }
 .empty-state.large { margin:18px 0; padding:48px; }
 .empty-state.small { padding:18px; }
-@media (max-width:1100px) { .dashboard-masonry { column-count:2; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr 1fr; } }
-@media (max-width:760px) { .dashboard-toolbar { flex-direction:column; align-items:stretch; } .dashboard-masonry { column-count:1; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr; } }
+@media (max-width:1100px) { .daily-workbench { grid-template-columns:1fr 1fr; } .dashboard-masonry { column-count:2; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr 1fr; } }
+@media (max-width:760px) { .daily-workbench { grid-template-columns:1fr; } .dashboard-toolbar { flex-direction:column; align-items:stretch; } .dashboard-masonry { column-count:1; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr; } }
 </style>
