@@ -94,6 +94,11 @@
 - 首批支持日行情和席位 parser 重放，输出 parsed/skipped/error/sample/stats，不修改数据库。
 - 新增 `POST /api/dataset/raw-archives/{file_id}/replay`，后续修 parser 可先 dry-run 对比。
 
+### v0.3.4：DCE / INE 数据源诊断
+- 覆盖矩阵将 INE 席位明确标为 not_supported，避免和普通采集失败混淆。
+- 新增 DCE / INE 弱源诊断服务，汇总覆盖状态、最近 crawler run、data_gap、raw archive 和建议动作。
+- 新增 `GET /api/quality/diagnostics/{trade_date}`，支持 `exchange=DCE|INE` 定向查看。
+
 ---
 
 

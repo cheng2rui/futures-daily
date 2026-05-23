@@ -38,6 +38,7 @@ KIND_LABELS = {
 }
 
 NOT_SUPPORTED_BY_EXCHANGE = {
+    "seat_rank": {"INE"},
     "basis": {"CFFEX"},
     "warehouse_receipt": {"CFFEX"},
 }
@@ -77,8 +78,8 @@ def build_coverage_matrix(db: Session, trade_date: str, *, sync_gaps: bool = Fal
         for kind in MATRIX_KINDS:
             if kind == "event_calendar":
                 cell = event_cell(event_count)
-            elif exchange in NOT_SUPPORTED_BY_EXCHANGE.get(kind, set()):
-                cell = status_cell("not_supported", 0, "不适用", "-")
+            elif exchange in NOT_SUPPORTED_BY_EXCHANGE.get(kind, set()) and counts.get(kind, {}).get(exchange, 0) <= 0:
+                cell = status_cell("not_supported", 0, not_supported_message(exchange, kind), "-")
             elif kind == "seat_rank" and counts["seat_rank"].get(exchange, 0) <= 0:
                 fallback = fallback_cell(exchange, run_index, snapshot_index)
                 cell = fallback if fallback["status"] == "fallback" else source_cell(kind, exchange, counts, run_index, snapshot_index)
@@ -180,6 +181,14 @@ def event_cell(count: int) -> dict[str, Any]:
 
 def status_cell(status: str, rows: int, message: str, source: str) -> dict[str, Any]:
     return {"status": status, "rows": rows, "message": message, "source": source}
+
+
+def not_supported_message(exchange: str, kind: str) -> str:
+    if exchange == "INE" and kind == "seat_rank":
+        return "INE 席位暂无公开 adapter；需等待 AkShare/官方接口或接入授权数据源。"
+    if exchange == "CFFEX" and kind in {"basis", "warehouse_receipt"}:
+        return "金融期货通常无商品基差/仓单数据。"
+    return "不适用"
 
 
 def snapshot_rows(snap: MarketSnapshot | None) -> int:
