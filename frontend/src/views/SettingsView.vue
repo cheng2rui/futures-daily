@@ -252,6 +252,7 @@ async function testNotify() {
 async function testPushLatest() {
   testingPush.value = true
   settingsMessage.value = ''
+  pushResults.value = []
   try {
     const { data } = await api.post('/reports/latest/push')
     pushResults.value = data?.dispatch || []

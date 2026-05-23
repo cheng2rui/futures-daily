@@ -103,8 +103,8 @@ class AkShareSource:
                     df = _call_with_retry(lambda: self.ak.get_dce_daily(date=trade_date))
                     if df is not None and not df.empty:
                         return FetchResult(exchange=exchange, kind="daily", rows=_records(df))
-                    # DCE official API returned empty; try Sina fallback
-                    fallback = fetch_dce_daily_from_sina(trade_date)
+                # DCE official API returned empty; try Sina fallback
+                fallback = fetch_dce_daily_from_sina(trade_date)
                 return FetchResult(
                     exchange=exchange,
                     kind="daily",
@@ -150,7 +150,7 @@ class AkShareSource:
                         return FetchResult(
                             exchange=exchange,
                             kind="seat_rank",
-                            rows=[],
+                            rows=fallback.rows,
                             error=fallback.error,
                         )
             elif exchange == "CZCE":

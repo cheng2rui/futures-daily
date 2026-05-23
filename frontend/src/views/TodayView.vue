@@ -313,7 +313,7 @@ const dashboardEditing = ref(false)
 const draggingCardId = ref('')
 const expandedDashboardCards = ref([])
 const activeDashboardMode = ref(loadDashboardMode())
-const appVersion = ref('0.1.4')
+const appVersion = ref('0.2.1')
 const viewingDate = computed(() => route.query.date ? String(route.query.date) : '')
 const displayDate = computed(() => formatDate(report.value.date || viewingDate.value) || '暂无日期')
 const isEmptyReport = computed(() => !report.value.date && !report.value.overview?.summary)
@@ -330,7 +330,7 @@ const visibleDashboardCards = computed(() => modeDashboardCards.value.filter(car
 const dashboardMarket = computed(() => activeDashboardMode.value === 'intraday' ? intraday.value.market || {} : report.value.market || {})
 const reportVersion = computed(() => report.value.meta?.version || '')
 const reportVersionWarning = computed(() => activeDashboardMode.value === 'review' && reportVersion.value && appVersion.value && reportVersion.value !== appVersion.value)
-const watchFocusRows = computed(() => (intraday.value.watch_symbols || []).slice(0, 12))
+const watchFocusRows = computed(() => (activeDashboardMode.value === 'intraday' ? intraday.value.watch_symbols || [] : report.value.watch_symbols || []).slice(0, 12))
 const watchRows = computed(() => rows(activeDashboardMode.value === 'intraday' ? intraday.value.watch_symbols : report.value.watch_symbols).slice(0, 14))
 const breadthRows = computed(() => (activeDashboardMode.value === 'intraday' ? intraday.value.sectors || [] : report.value.structure?.sector_breadth || []).map(x => [x.name, x.count, x.up, x.down, x.up_ratio != null ? `${x.up_ratio}%` : '-', fmtNum(x.volume), fmtNum(x.open_interest)]))
 const gainerRows = computed(() => rows(activeDashboardMode.value === 'intraday' ? intraday.value.rankings?.gainers : report.value.rankings?.gainers))
@@ -412,7 +412,7 @@ function loadHiddenDashboardCards() {
 function loadDashboardMode() {
   try {
     const saved = localStorage.getItem(DASHBOARD_MODE_KEY)
-    return saved === 'review' ? 'review' : 'intraday'
+    return ['intraday', 'review'].includes(saved) ? saved : 'intraday'
   } catch {
     return 'intraday'
   }
@@ -604,15 +604,18 @@ function runRecollect(x, rebuild) {
   for (const kind of recollectKinds(x)) params.append('kinds', kind)
   return api.post(`/reports/${report.value.date}/recollect?${params.toString()}`)
 }
-function startIntradayTimer() {
+function stopIntradayTimer() {
   if (intradayTimer) clearInterval(intradayTimer)
   intradayTimer = null
+}
+function startIntradayTimer() {
+  stopIntradayTimer()
   if (intradayAutoRefresh.value && activeDashboardMode.value === 'intraday') {
     intradayTimer = setInterval(() => loadIntraday(false), 5 * 60 * 1000)
   }
 }
 onMounted(async () => { await Promise.all([loadHealth(), load(), loadIntraday(false)]); startIntradayTimer() })
-onUnmounted(() => { if (intradayTimer) clearInterval(intradayTimer) })
+onUnmounted(stopIntradayTimer)
 watch(() => route.query.date, async () => { await Promise.all([load(), loadIntraday(false)]) })
 watch(activeDashboardMode, mode => { if (mode === 'intraday' && !intraday.value.trade_date) loadIntraday(false); startIntradayTimer() })
 watch(intradayAutoRefresh, startIntradayTimer)
@@ -667,7 +670,7 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .brief-bullet b { color:#1e293b; }
 .brief-bullet span { color:#64748b; line-height:1.55; font-size:13px; }
 .positioning { margin-bottom:14px; color:#475569; line-height:1.7; background:#f8fafc; border:1px solid #eef2f7; border-radius:14px; padding:12px 14px; }
-.abnormal-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.abnormal-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
 .abnormal-card { border:1px solid #e8edf5; border-radius:16px; padding:12px; background:linear-gradient(180deg,#fff,#fbfdff); box-shadow:0 6px 16px rgba(15,23,42,.035); }
 .abnormal-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
 .abnormal-head b { display:block; color:#0f172a; font-size:16px; }
@@ -706,7 +709,7 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .watch-focus-meta em { font-style:normal; font-weight:950; }
 .watch-focus-meta span, .watch-focus-sub { color:#94a3b8; font-size:12px; }
 .watch-focus-sub { margin-top:8px; }
-.watch-digest-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.watch-digest-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
 .watch-digest-card { border:1px solid #e8edf5; border-radius:16px; padding:12px; background:#fff; box-shadow:0 6px 16px rgba(15,23,42,.035); }
 .watch-digest-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
 .watch-digest-head b { display:block; color:#0f172a; font-size:16px; }
