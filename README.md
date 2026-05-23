@@ -69,3 +69,11 @@ curl http://localhost:8500/api/health
 后端：FastAPI + SQLite + APScheduler + AkShare
 
 前端：Vue 3 + Vite + ECharts
+
+本地检查：
+
+```bash
+scripts/test.sh
+```
+
+脚本会使用 `tmp/test.db`，避免本地测试误读 Docker 内的 `/app/data/futures_daily.db` 路径。

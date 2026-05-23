@@ -113,6 +113,7 @@ if [[ "$NO_DEPLOY" -eq 0 ]]; then
   COMMIT="$(git rev-parse --short=12 HEAD)"
   GIT_COMMIT="$COMMIT" docker compose up -d --build
   echo "Waiting for health endpoint..."
+  HEALTH_OK=0
   for _ in {1..20}; do
     if HEALTH="$(curl -fsS http://localhost:8500/api/health 2>/dev/null)"; then
       echo "$HEALTH"
@@ -127,10 +128,15 @@ if health.get("version") != version:
 if health.get("commit") != commit:
     raise SystemExit(f"Health commit mismatch: {health.get('commit')} != {commit}")
 PY
+      HEALTH_OK=1
       break
     fi
     sleep 1
   done
+  if [[ "$HEALTH_OK" -ne 1 ]]; then
+    echo "Health endpoint did not become ready within 20 seconds." >&2
+    exit 1
+  fi
 fi
 
 if [[ "$NO_PUSH" -eq 0 ]]; then
