@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h2 class="page-title">任务记录</h2>
-        <p>查看日报生成、盘中刷新、补采和推送任务的执行状态。</p>
+        <p>查看系统最近做过什么：生成日报、更新行情、补齐数据、发送推送。</p>
       </div>
       <button class="refresh" :disabled="loading" @click="load">{{ loading ? '刷新中...' : '刷新' }}</button>
     </div>
@@ -15,8 +15,8 @@
           <select v-model="typeFilter">
             <option value="all">全部</option>
             <option value="generate_report">生成日报</option>
-            <option value="refresh_intraday">盘中刷新</option>
-            <option value="recollect_report">数据补采</option>
+            <option value="refresh_intraday">更新行情</option>
+            <option value="recollect_report">补齐数据</option>
             <option value="push_report">日报推送</option>
           </select>
         </label>
@@ -116,14 +116,14 @@ function duration(j) {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 function statusTone(status) { return status === 'success' ? 'ok' : status === 'failed' ? 'bad' : status === 'running' ? 'running' : 'partial' }
-function jobLabel(name) { return ({ generate_report: '生成日报', refresh_intraday: '盘中刷新', recollect_report: '数据补采', push_report: '日报推送' })[name] || name }
+function jobLabel(name) { return ({ generate_report: '生成日报', refresh_intraday: '更新行情', recollect_report: '补齐数据', push_report: '日报推送' })[name] || name }
 function parsed(j) { try { return JSON.parse(j.result_json || '{}') } catch { return null } }
 function detail(j) {
   const data = parsed(j)
   if (!data) return String(j.result_json || '-').slice(0, 80)
   if (data.summary) return data.summary
   if (data.dispatch) return data.dispatch.map(channelResult).join(' / ')
-  if (j.name === 'refresh_intraday') return `行情保存 ${savedRows(data.collect)} 行${data.snapshot?.updated_at ? `｜更新 ${data.snapshot.updated_at}` : ''}`
+  if (j.name === 'refresh_intraday') return `拿到行情 ${savedRows(data.collect)} 行${data.snapshot?.updated_at ? `｜更新时间 ${data.snapshot.updated_at}` : ''}`
   if (j.name === 'recollect_report' || data.exchange || data.kinds) return recollectDetail(data)
   if (data.collect || data.seats || data.quhe || data.news) return ['collect', 'seats', 'quhe', 'news'].filter(k => data[k]).join(' / ') || '-'
   return Object.keys(data).slice(0, 4).join(' / ') || '-'
@@ -132,10 +132,10 @@ function recollectDetail(data) {
   const parts = []
   if (data.exchange) parts.push(`交易所：${data.exchange}`)
   if (data.kinds?.length) parts.push(`类型：${data.kinds.map(kindLabel).join('、')}`)
-  if (data.collect) parts.push(`行情保存 ${savedRows(data.collect)} 行`)
-  if (data.seats) parts.push(`席位保存 ${savedRows(data.seats)} 行`)
+  if (data.collect) parts.push(`拿到行情 ${savedRows(data.collect)} 行`)
+  if (data.seats) parts.push(`拿到席位 ${savedRows(data.seats)} 行`)
   const q = data.quality || data.data_quality
-  if (q?.overall_coverage_pct != null) parts.push(`可信度 ${q.overall_coverage_pct}%`)
+  if (q?.overall_coverage_pct != null) parts.push(`数据完整度 ${q.overall_coverage_pct}%`)
   return parts.join(' / ') || '-'
 }
 function savedRows(result) { return (result?.results || []).reduce((sum, x) => sum + Number(x.saved || 0), 0) }
@@ -165,7 +165,7 @@ function failureText(job) {
 }
 function normalizeError(value) {
   const text = String(value || 'unknown').replace(/\s+/g, ' ').trim()
-  if (text.includes('fallback unavailable')) return '备用源不可用，需等待官方恢复或商业源'
+  if (text.includes('fallback unavailable')) return '备用数据也拿不到，需要等交易所恢复或接商业数据'
   if (text.includes('not_collected')) return '未采集到数据'
   if (text.includes('timeout')) return '请求超时'
   return text.slice(0, 120)

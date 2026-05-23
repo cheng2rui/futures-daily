@@ -13,10 +13,10 @@
     <div class="metric-card accent-blue">
       <div class="metric-label">成交量</div>
       <div class="metric-main">{{ fmtNum(dashboardMarket.volume) }}</div>
-      <div class="metric-sub">{{ activeDashboardMode === 'intraday' ? '阶段快照' : '总成交' }}</div>
+      <div class="metric-sub">{{ activeDashboardMode === 'intraday' ? '最近一次更新' : '当日总成交' }}</div>
     </div>
     <div class="metric-card accent-orange">
-      <div class="metric-label">数据可信度</div>
+      <div class="metric-label">数据完整度</div>
       <div class="metric-main">{{ qualityCoveragePct }}%</div>
       <div class="metric-sub">{{ qualityOkText }}</div>
     </div>

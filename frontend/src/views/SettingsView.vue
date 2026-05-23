@@ -15,11 +15,11 @@
         </label>
         <div class="form-grid">
           <label>
-            <span>Bot Token</span>
-            <input v-model="telegramForm.bot_token" :placeholder="telegramMasked ? '已配置，留空/保持 *** 则不修改' : '123456:ABC...'" autocomplete="off" />
+            <span>机器人密钥</span>
+            <input v-model="telegramForm.bot_token" :placeholder="telegramMasked ? '已配置，不想修改就保持不变' : '123456:ABC...'" autocomplete="off" />
           </label>
           <label>
-            <span>Chat ID</span>
+            <span>接收人/群 ID</span>
             <input v-model="telegramForm.chat_id" placeholder="如 1744225772 或群组 ID" />
           </label>
         </div>
@@ -36,25 +36,25 @@
         </label>
         <div class="form-grid">
           <label>
-            <span>Webhook URL（兼容旧转发器，可空）</span>
+            <span>转发地址（可空）</span>
             <input v-model="wechatbotForm.webhook_url" placeholder="http://.../send" autocomplete="off" />
           </label>
           <label>
-            <span>Token（Claw/iLink 或 Webhook token）</span>
-            <input v-model="wechatbotForm.token" :placeholder="wechatbotMasked ? '已配置，留空/保持 *** 则不修改' : 'ilink bot token'" autocomplete="off" />
+            <span>密钥</span>
+            <input v-model="wechatbotForm.token" :placeholder="wechatbotMasked ? '已配置，不想修改就保持不变' : 'ilink bot token'" autocomplete="off" />
           </label>
           <label>
-            <span>Claw Base URL</span>
+            <span>服务地址</span>
             <input v-model="wechatbotForm.claw_base_url" placeholder="https://ilinkai.weixin.qq.com" />
           </label>
           <label>
-            <span>目标 ID / chat_id</span>
+            <span>接收人 ID</span>
             <input v-model="wechatbotForm.chat_id" placeholder="wxid / user_id / xxx@im.wechat" />
           </label>
         </div>
         <div class="form-actions">
           <button :disabled="savingWeChatBot">{{ savingWeChatBot ? '保存中...' : '保存 WeChatBot 配置' }}</button>
-          <button type="button" class="ghost" :disabled="testingNotify" @click="testNotify">{{ testingNotify ? '测试中...' : '测试通知通道' }}</button>
+          <button type="button" class="ghost" :disabled="testingNotify" @click="testNotify">{{ testingNotify ? '测试中...' : '发一条测试消息' }}</button>
           <button type="button" class="ghost" :disabled="testingPush" @click="testPushLatest">{{ testingPush ? '推送中...' : '测试推送最新日报' }}</button>
           <span v-if="settingsMessage" class="form-message">{{ settingsMessage }}</span>
         </div>
@@ -241,7 +241,7 @@ async function testNotify() {
       ? `通知测试部分失败：${failed.map(x => channelLabel(x.channel)).join('、')}`
       : sent.length
         ? `通知测试完成：成功 ${sent.length}，跳过 ${skipped.length}`
-        : '通知测试已执行，但没有实际发送通道'
+        : '测试已执行，但还没有启用任何通知方式'
   } catch (err) {
     settingsMessage.value = '通知测试失败，请检查通知配置或服务日志'
   } finally {
@@ -263,7 +263,7 @@ async function testPushLatest() {
       ? `测试推送部分失败：${failed.map(x => channelLabel(x.channel)).join('、')}`
       : sent.length
         ? `测试推送完成：成功 ${sent.length}，跳过 ${skipped.length}`
-        : '测试推送已执行，但没有实际发送通道'
+        : '测试推送已执行，但还没有启用任何通知方式'
   } catch (err) {
     settingsMessage.value = '测试推送失败，请先生成日报并检查通知配置'
   } finally {

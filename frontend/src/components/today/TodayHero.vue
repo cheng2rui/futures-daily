@@ -3,7 +3,7 @@
     <div>
       <div class="eyebrow">Futures Daily · {{ displayDate }}</div>
       <h1>{{ report.overview?.stage || (viewingDate ? '历史期货日报' : '今日期货日报') }}</h1>
-      <p>{{ report.overview?.summary || '暂无日报数据。点击右上角生成日报，系统会采集行情、席位和结构化归档后生成市场概览。' }}</p>
+      <p>{{ report.overview?.summary || '暂无日报数据。点击右上角生成日报，系统会获取行情、席位和资讯，整理出今天的市场概览。' }}</p>
     </div>
     <div class="actions">
       <router-link v-if="viewingDate" to="/" class="secondary">查看最新</router-link>

@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h2 class="page-title">席位日报</h2>
-        <p class="muted">{{ report.date || '暂无日期' }} ｜ 席位数据来自交易所公开排名 + 已有 rsstsx 结构化归档增强。</p>
+        <p class="muted">{{ report.date || '暂无日期' }} ｜ 查看主力资金席位的多空变化，重点关注连续加仓、减仓和方向切换。</p>
       </div>
     </div>
 
@@ -26,8 +26,8 @@
     <div v-if="loading" class="notice">正在加载席位数据...</div>
     <div v-else-if="!hasAnySeatData" class="notice">暂无席位数据。可先生成日报；部分交易所/品种不披露席位排名时会保持为空。</div>
 
-    <SectionCard title="Focus5 连续动作">
-      <div class="section-note">来自你原先席位日报的结构化归档：乾坤 / 永安 / 摩根 / 瑞银 / 混沌，按净变化绝对值排序。</div>
+    <SectionCard title="重点席位连续动作">
+      <div class="section-note">重点跟踪乾坤、永安、摩根、瑞银、混沌等席位，优先显示净变化最大的品种。</div>
       <div v-if="!trendRows.length" class="empty-state">暂无 Focus5 连续动作。可筛选具体席位或品种查看。</div>
       <SimpleTable v-else :columns="trendColumns" :data="trendRows" />
     </SectionCard>

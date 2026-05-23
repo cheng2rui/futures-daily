@@ -37,7 +37,7 @@
       <div class="dashboard-toolbar">
         <div>
           <b>今日看板</b>
-          <span>{{ dashboardEditing ? '拖动卡片调整顺序，取消勾选可隐藏模块。布局会自动保存。' : activeDashboardMode === 'intraday' ? '盘中视图聚焦异动、涨跌、成交和自选监控。' : '复盘视图聚焦日报结论、席位、板块结构和数据质量。' }}</span>
+          <span>{{ dashboardEditing ? '拖动卡片调整顺序，取消勾选可隐藏模块。布局会自动保存。' : activeDashboardMode === 'intraday' ? '盘中看最新行情变化、涨跌排行和自选品种。' : '复盘看今天发生了什么、哪些品种值得明天继续盯。' }}</span>
         </div>
         <div class="dashboard-actions">
           <div class="mode-switch" role="tablist" aria-label="今日看板视图">
@@ -45,21 +45,21 @@
             <button :class="{ active: activeDashboardMode === 'review' }" @click="setDashboardMode('review')">复盘</button>
           </div>
           <div v-if="activeDashboardMode === 'intraday'" class="intraday-actions">
-            <span>{{ intraday.updated_at ? `更新 ${intraday.updated_at}` : '暂无盘中快照' }}</span>
+            <span>{{ intraday.updated_at ? `更新 ${intraday.updated_at}` : '暂无最新行情' }}</span>
             <label><input v-model="intradayAutoRefresh" type="checkbox" /> 自动刷新</label>
             <button class="secondary light" :disabled="intradayLoading" @click="loadIntraday(false)">{{ intradayLoading ? '刷新中...' : '刷新页面' }}</button>
-            <button class="secondary light collect" :disabled="intradayLoading" @click="loadIntraday(true)">{{ intradayLoading ? '采集中...' : '重新采集' }}</button>
+            <button class="secondary light collect" :disabled="intradayLoading" @click="loadIntraday(true)">{{ intradayLoading ? '获取中...' : '重新获取行情' }}</button>
           </div>
           <button class="secondary light" @click="dashboardEditing = !dashboardEditing">{{ dashboardEditing ? '完成编辑' : '编辑看板' }}</button>
           <button v-if="dashboardEditing" class="secondary light" @click="resetDashboardLayout">恢复默认</button>
         </div>
       </div>
 
-      <div v-if="activeDashboardMode === 'intraday'" class="intraday-disclaimer">{{ intraday.disclaimer || '非实时行情，仅基于最近一次阶段性采集结果。' }}</div>
+      <div v-if="activeDashboardMode === 'intraday'" class="intraday-disclaimer">{{ intraday.disclaimer || '这里不是实时行情，只展示最近一次成功获取的数据。' }}</div>
 
       <div v-if="reportVersionWarning" class="notice version-warning version-rebuild">
-        <span>当前日报由 v{{ reportVersion }} 生成，服务已是 v{{ appVersion }}。建议重新生成日报以应用最新逻辑。</span>
-        <button class="mini-action" :disabled="loading" @click="rebuildCurrentReport">{{ loading ? '重建中...' : '用当前版本重建' }}</button>
+        <span>这份日报是旧版本生成的，建议重新生成一次，让分析规则更新到最新版。</span>
+        <button class="mini-action" :disabled="loading" @click="rebuildCurrentReport">{{ loading ? '生成中...' : '重新生成' }}</button>
       </div>
 
       <div v-if="dashboardEditing" class="module-picker">
@@ -107,8 +107,8 @@
           </template>
 
           <template v-else-if="card.id === 'abnormal'">
-            <div class="positioning">{{ report.intelligence?.positioning || '收盘后汇总行情、席位、仓单、基差和资讯线索，形成可解释的市场观察清单。' }}</div>
-            <div v-if="!abnormalCards.length" class="empty-state small">暂无显著异动拆解。等待更多行情、席位、仓单或基差数据。</div>
+            <div class="positioning">{{ report.intelligence?.positioning || '汇总行情、席位、仓单、现货价差和资讯，帮你找出今天最值得关注的变化。' }}</div>
+            <div v-if="!abnormalCards.length" class="empty-state small">暂时没有特别明显的异动。等更多行情、席位或现货数据补齐后会更完整。</div>
             <div v-else class="abnormal-grid dashboard-inner-grid">
               <div v-for="item in visibleItems(abnormalCards, card, 3)" :key="`${item.exchange}-${item.symbol}`" class="abnormal-card">
                 <div class="abnormal-head">
@@ -147,7 +147,7 @@
           </template>
 
           <template v-else-if="card.id === 'watchDigest'">
-            <div class="positioning">{{ watchDigest.summary || '聚合自选品种的价格、席位、仓单/基差和资讯观点。' }}</div>
+            <div class="positioning">{{ watchDigest.summary || '集中查看你关注品种的价格变化、席位变化、仓单、现货价差和资讯观点。' }}</div>
             <div v-if="!watchDigestItems.length" class="empty-state small">暂无自选品种日报。可在设置中维护关注品种。</div>
             <div v-else class="watch-digest-grid dashboard-inner-grid">
               <div v-for="item in visibleItems(watchDigestItems, card, 4)" :key="item.symbol" class="watch-digest-card" :class="`bias-${item.bias || 'neutral'}`">
@@ -169,7 +169,7 @@
           </template>
 
           <template v-else-if="card.id === 'news'">
-            <div v-if="!newsViewpoints.length && !newsItems.length" class="empty-state small">暂无资讯摘要。生成日报时会尝试采集东方财富/新浪等公开源。</div>
+            <div v-if="!newsViewpoints.length && !newsItems.length" class="empty-state small">暂无资讯摘要。生成日报时会尝试读取公开财经资讯。</div>
             <div v-if="newsViewpoints.length" class="viewpoint-list">
               <div v-for="item in visibleItems(newsViewpoints, card, 5)" :key="item.symbol" class="viewpoint-item" :class="`bias-${item.bias || 'neutral'}`">
                 <b>{{ item.name }} · {{ biasLabel(item.bias) }}</b><span>{{ item.summary }}</span>
@@ -214,7 +214,7 @@
           <template v-else-if="card.id === 'losers'"><SimpleTable :columns="rankColumns" :data="loserRows" /></template>
 
           <template v-else-if="card.id === 'seatSignals'">
-            <div v-if="!seatSignalCards.length" class="empty-state small">暂无结构化席位信号。</div>
+            <div v-if="!seatSignalCards.length" class="empty-state small">暂无席位变化信号。</div>
             <div v-else class="seat-cards">
               <div v-for="x in seatSignalCards" :key="`${x.exchange}-${x.name}`" class="seat-card">
                 <div class="seat-title"><span>{{ x.name }}</span><em>{{ x.exchange }}</em></div>
@@ -234,11 +234,11 @@
           <template v-else-if="card.id === 'quality'">
             <div class="quality-actions">
               <span>{{ qualityActionText }}</span>
-              <button class="mini-action" :disabled="loading || bulkRecollecting || !recoverableQualityRows.length" @click="recollectFailedOnly">{{ bulkRecollecting ? '补采中...' : '只补失败项' }}</button>
+              <button class="mini-action" :disabled="loading || bulkRecollecting || !recoverableQualityRows.length" @click="recollectFailedOnly">{{ bulkRecollecting ? '补齐中...' : '只补缺失数据' }}</button>
             </div>
             <div class="quality-table">
               <table>
-                <thead><tr><th>交易所</th><th>状态</th><th>日行情</th><th>席位</th><th>fallback</th><th>说明</th><th>操作</th></tr></thead>
+                <thead><tr><th>交易所</th><th>状态</th><th>行情</th><th>席位</th><th>备用数据</th><th>说明</th><th>操作</th></tr></thead>
                 <tbody>
                   <tr v-for="x in qualityExchangeRows" :key="x.exchange">
                     <td>{{ exchangeName(x.exchange) }}</td>
@@ -247,9 +247,9 @@
                     <td>{{ sourceRows(x.seat_rank) }}</td>
                     <td>{{ sourceRows(x.seat_rank_fallback) }}</td>
                     <td class="quality-note">{{ x.note || x.daily?.error || x.seat_rank?.error || x.seat_rank_fallback?.error || '-' }}</td>
-                    <td><button class="mini-action" :disabled="loading || recollecting[x.exchange] || !isRecoverableQualityRow(x)" @click="recollectExchange(x)">{{ recollecting[x.exchange] ? '补采中...' : recollectButtonText(x) }}</button></td>
+                    <td><button class="mini-action" :disabled="loading || recollecting[x.exchange] || !isRecoverableQualityRow(x)" @click="recollectExchange(x)">{{ recollecting[x.exchange] ? '补齐中...' : recollectButtonText(x) }}</button></td>
                   </tr>
-                  <tr v-if="!qualityExchangeRows.length"><td colspan="7" class="empty-cell">暂无数据质量记录</td></tr>
+                  <tr v-if="!qualityExchangeRows.length"><td colspan="7" class="empty-cell">暂无数据检查记录</td></tr>
                 </tbody>
               </table>
             </div>
@@ -305,7 +305,7 @@ const defaultDashboardCards = [
   { id: 'shortSeat', title: '席位空头增仓 TOP', size: 'chart', mode: 'review' },
   { id: 'seatSignals', title: '结构信号 TOP', mode: 'review' },
   { id: 'breadth', title: '板块广度', mode: 'review' },
-  { id: 'quality', title: '数据质量', size: 'wide', mode: 'review' },
+  { id: 'quality', title: '数据完整度', size: 'wide', mode: 'review' },
 ]
 const dashboardCards = ref(loadDashboardLayout())
 const hiddenDashboardCards = ref(loadHiddenDashboardCards())
@@ -319,7 +319,7 @@ const displayDate = computed(() => formatDate(report.value.date || viewingDate.v
 const isEmptyReport = computed(() => !report.value.date && !report.value.overview?.summary)
 const generateButtonText = computed(() => {
   if (loading.value) return viewingDate.value ? '抓取中...' : '生成中...'
-  return viewingDate.value ? '抓取信息并重建' : '生成日报'
+  return viewingDate.value ? '重新获取并生成' : '生成日报'
 })
 const pushText = computed(() => report.value.push_digest?.brief || report.value.push_digest?.text || '')
 const copyButtonText = computed(() => copied.value ? '已复制' : '复制推送文案')
@@ -342,9 +342,9 @@ const unrecoverableQualityRows = computed(() => qualityExchangeRows.value.filter
 const qualityActionText = computed(() => {
   const recoverable = recoverableQualityRows.value.length
   const unrecoverable = unrecoverableQualityRows.value.length
-  if (!recoverable && !unrecoverable) return '当前没有需要补采的数据项。'
-  if (!recoverable && unrecoverable) return `${unrecoverable} 个不可自动恢复项，需要官方恢复或商业源。`
-  return `${recoverable} 个可补采项${unrecoverable ? `，${unrecoverable} 个不可自动恢复项` : ''}。`
+  if (!recoverable && !unrecoverable) return '当前数据看起来比较完整。'
+  if (!recoverable && unrecoverable) return `${unrecoverable} 个数据项暂时拿不到，可能需要等交易所恢复或接入商业数据。`
+  return `${recoverable} 个数据项可以继续尝试补齐${unrecoverable ? `，${unrecoverable} 个暂时拿不到` : ''}。`
 })
 const sectorStrengthTop = computed(() => [...(activeDashboardMode.value === 'intraday' ? intraday.value.sectors || [] : report.value.sectors || [])].sort((a, b) => Math.abs(Number(b.avg_change || 0)) - Math.abs(Number(a.avg_change || 0))).slice(0, 8))
 const sectorBreadth = computed(() => activeDashboardMode.value === 'intraday' ? intraday.value.sectors || [] : report.value.structure?.sector_breadth || [])
@@ -368,8 +368,8 @@ const sourceTip = computed(() => {
   if (!quality || quality.status === 'empty') return ''
   if (quality.summary) return `数据来源提示：${quality.summary}。`
   const bad = (quality.exchanges || []).filter(x => x.status !== 'ok')
-  if (!bad.length) return `数据来源：交易所/AKShare/增强源，覆盖 ${quality.coverage_pct ?? 0}%。`
-  return `数据来源提示：${bad.map(x => `${exchangeName(x.exchange)} ${statusLabel(x.status)}`).join('、')}；部分交易所可能使用 fallback 或暂无数据。`
+  if (!bad.length) return `数据检查：主要交易所数据已拿到，完整度 ${quality.coverage_pct ?? 0}%。`
+  return `数据检查：${bad.map(x => `${exchangeName(x.exchange)} ${statusLabel(x.status)}`).join('、')}；有些交易所可能暂时缺数据或只拿到了备用数据。`
 })
 const reportBrief = computed(() => report.value.report_brief || null)
 const abnormalCards = computed(() => report.value.intelligence?.abnormal_cards || [])
@@ -388,7 +388,7 @@ const longSeatOption = computed(() => horizontalBarOption((report.value.seats?.l
 const shortSeatOption = computed(() => horizontalBarOption((report.value.seats?.short_increase_top || []).slice(0, 10).map(x => ({ name: `${x.variety} ${x.seat}`, value: Number(x.change || 0) })), '#12966b'))
 
 function emptyReport() { return { overview: {}, market: {}, meta: {}, sectors: [], rankings: {}, data_quality: {}, watch_symbols: [], risk_flags: [], intelligence: {} } }
-function emptyIntraday() { return { mode: 'intraday', trade_date: '', updated_at: '', disclaimer: '非实时行情，仅基于最近一次阶段性采集结果。', market: {}, rankings: {}, sectors: [], watch_symbols: [] } }
+function emptyIntraday() { return { mode: 'intraday', trade_date: '', updated_at: '', disclaimer: '这里不是实时行情，只展示最近一次成功获取的数据。', market: {}, rankings: {}, sectors: [], watch_symbols: [] } }
 function loadDashboardLayout() {
   try {
     const saved = JSON.parse(localStorage.getItem(DASHBOARD_LAYOUT_KEY) || '{}')
@@ -469,8 +469,8 @@ function fmtNum(value) { if (value == null) return '-'; const n = Number(value);
 function sourceRows(item) { if (!item || !item.rows) return '-'; const suffix = item.ok ? '' : '!'; return `${item.rows}${suffix}` }
 function isRecoverableQualityRow(x) { return recollectKinds(x).length > 0 }
 function recollectKinds(x) { const kinds = []; if (x.unrecoverable_kinds?.includes('daily')) return []; if (!x.daily?.ok) kinds.push('daily'); if (!x.unrecoverable_kinds?.includes('seat_rank') && !x.seat_rank?.ok && !x.seat_rank_fallback?.ok) kinds.push('seat_rank'); return kinds }
-function recollectButtonText(x) { if (!isRecoverableQualityRow(x)) return '不可补采'; const kinds = recollectKinds(x); if (kinds.length === 1 && kinds[0] === 'daily') return '补采行情'; if (kinds.length === 1 && kinds[0] === 'seat_rank') return '补采席位'; return '重新采集' }
-function qualityStatusLabel(x) { return x.unrecoverable_kinds?.length ? '部分覆盖·不可恢复' : statusLabel(x.status) }
+function recollectButtonText(x) { if (!isRecoverableQualityRow(x)) return '暂时补不了'; const kinds = recollectKinds(x); if (kinds.length === 1 && kinds[0] === 'daily') return '补行情'; if (kinds.length === 1 && kinds[0] === 'seat_rank') return '补席位'; return '重新获取' }
+function qualityStatusLabel(x) { return x.unrecoverable_kinds?.length ? '部分拿到·暂时缺项' : statusLabel(x.status) }
 function statusClass(status, x = {}) { if (x.unrecoverable_kinds?.length) return 'unrecoverable-text'; return status === 'ok' ? 'positive-text' : status === 'failed' ? 'negative-text' : 'warn-text' }
 function compactNumber(v) { const n = Number(v || 0); if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(1)}亿`; if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`; return String(Math.round(n)) }
 function toneClass(v) { const n = Number(v || 0); return n > 0 ? 'tone-up' : n < 0 ? 'tone-down' : 'tone-flat' }
@@ -501,7 +501,7 @@ async function copyPushDigest() {
     notice.value = '推送文案已复制。'
     setTimeout(() => { copied.value = false }, 1800)
   } catch (err) {
-    error.value = '复制失败，请手动从推送摘要接口复制。'
+    error.value = '复制失败，请手动选中文字复制。'
   }
 }
 
@@ -515,9 +515,9 @@ async function pushReport() {
     const { data } = await api.post(url)
     const failed = (data?.dispatch || []).filter(x => x.ok === false)
     if (failed.length) {
-      error.value = `推送完成但部分通道失败：${failed.map(x => x.channel || x.error).join('、')}`
+      error.value = `推送完成，但有些通知没发出去：${failed.map(x => x.channel || x.error).join('、')}`
     } else {
-      notice.value = '推送任务已完成，可在任务记录查看通道明细。'
+      notice.value = '日报已推送，可在任务记录查看发送结果。'
     }
   } catch (err) {
     error.value = '推送失败，请检查通知配置或服务日志。'
@@ -536,14 +536,14 @@ async function loadIntraday(refresh = false) {
       ? await api.post('/markets/intraday/refresh', null, { params })
       : await api.get('/markets/intraday', { params })
     intraday.value = data || emptyIntraday()
-    if (refresh && data?.job_id) notice.value = `盘中快照已刷新，任务 #${data.job_id}。`
+    if (refresh && data?.job_id) notice.value = `最新行情已更新，任务 #${data.job_id}。`
   } catch (err) {
-    if (activeDashboardMode.value === 'intraday') error.value = '盘中快照加载失败，请稍后重试。'
+    if (activeDashboardMode.value === 'intraday') error.value = '最新行情加载失败，请稍后重试。'
   } finally {
     intradayLoading.value = false
   }
 }
-async function generate() { loading.value = true; error.value = ''; notice.value = ''; try { await api.post('/reports/generate', null, { params: viewingDate.value ? { trade_date: viewingDate.value, collect: true } : {} }); await load(); await loadIntraday(false); notice.value = '日报已重新生成。' } finally { loading.value = false } }
+async function generate() { loading.value = true; error.value = ''; notice.value = ''; try { await api.post('/reports/generate', null, { params: viewingDate.value ? { trade_date: viewingDate.value, collect: true } : {} }); await load(); await loadIntraday(false); notice.value = '日报已生成。' } finally { loading.value = false } }
 async function rebuildCurrentReport() {
   const tradeDate = report.value.date || viewingDate.value
   if (!tradeDate) return
@@ -553,9 +553,9 @@ async function rebuildCurrentReport() {
   try {
     await api.post('/reports/generate', null, { params: { trade_date: tradeDate, collect: false } })
     await load()
-    notice.value = '日报已用当前版本重建。'
+    notice.value = '日报已重新生成。'
   } catch (err) {
-    error.value = '日报重建失败，请检查任务记录或服务日志。'
+    error.value = '日报生成失败，请到任务记录里看失败原因。'
   } finally {
     loading.value = false
   }
@@ -568,9 +568,9 @@ async function recollectExchange(x) {
   try {
     const { data } = await runRecollect(x, true)
     await load()
-    notice.value = data?.summary || `${exchangeName(x.exchange)} 补采完成。`
+    notice.value = data?.summary || `${exchangeName(x.exchange)} 数据已补齐。`
   } catch (err) {
-    error.value = `${exchangeName(x.exchange)} 补采失败，请检查任务记录或服务日志。`
+    error.value = `${exchangeName(x.exchange)} 数据没补上，请到任务记录里看原因。`
   } finally {
     recollecting.value = { ...recollecting.value, [x.exchange]: false }
   }
@@ -589,9 +589,9 @@ async function recollectFailedOnly() {
     }
     await api.post('/reports/generate', null, { params: { trade_date: report.value.date, collect: false } })
     await load()
-    notice.value = `已补采 ${rows.length} 个可恢复数据项，并重建日报。`
+    notice.value = `已尝试补齐 ${rows.length} 个数据项，并重新生成日报。`
   } catch (err) {
-    error.value = '失败项补采中断，请检查任务记录或服务日志。'
+    error.value = '补数据中断了，请到任务记录里看原因。'
   } finally {
     bulkRecollecting.value = false
     const reset = { ...recollecting.value }

@@ -2,53 +2,52 @@
   <div class="dataset">
     <div class="page-head">
       <div>
-        <h2 class="page-title">数据资产</h2>
-        <p class="muted">{{ data.trade_date || '暂无日期' }} ｜ 将合约行情、席位排名、结构化席位归档收敛成可直接分析的品种级数据集。</p>
+        <h2 class="page-title">数据完整度</h2>
+        <p class="muted">{{ data.trade_date || '暂无日期' }} ｜ 看今天各交易所、各品种的数据是否齐全，哪些地方还需要补。</p>
       </div>
       <button class="primary" :disabled="loading" @click="load">刷新</button>
     </div>
 
-    <div v-if="loading" class="notice">正在加载数据资产...</div>
+    <div v-if="loading" class="notice">正在检查数据...</div>
 
     <div class="kpi-row">
       <KpiCard label="品种数" :value="data.count || 0" color="#e94560" />
       <KpiCard label="交易所" :value="exchangeRows.length" color="#0f3460" />
-      <KpiCard label="归档品种" :value="data.summary?.archive_count || 0" color="#16c79a" />
-      <KpiCard label="缺口" :value="gapAnalysis.count || gaps.length" color="#f5a623" />
-      <KpiCard label="可行动缺口" :value="gapAnalysis.actionable_count ?? actionableGapCount" :color="(gapAnalysis.actionable_count ?? actionableGapCount) ? '#e94560' : '#16c79a'" />
+      <KpiCard label="有席位变化" :value="data.summary?.archive_count || 0" color="#16c79a" />
+      <KpiCard label="缺数据项" :value="gapAnalysis.count || gaps.length" color="#f5a623" />
+      <KpiCard label="可尝试补齐" :value="gapAnalysis.actionable_count ?? actionableGapCount" :color="(gapAnalysis.actionable_count ?? actionableGapCount) ? '#e94560' : '#16c79a'" />
     </div>
 
-    <SectionCard title="六所覆盖矩阵">
-      <SimpleTable :columns="['交易所', '品种数', '席位覆盖', '结构信号', '日行情', '席位状态', '归档状态', '说明']" :data="exchangeRows" />
+    <SectionCard title="六大交易所数据情况">
+      <SimpleTable :columns="['交易所', '品种数', '有席位数据', '有席位变化', '行情', '席位', '席位整理', '说明']" :data="exchangeRows" />
     </SectionCard>
 
-    <SectionCard title="数据缺口" style="margin-top:16px">
-      <div v-if="!gapRows.length" class="empty-state small">暂无 open 缺口记录；注意旧数据在 crawler_runs 引入前不会自动生成缺口。</div>
-      <SimpleTable v-else :columns="['日期', '交易所', '类型', '级别', '行数', '原因']" :data="gapRows" />
+    <SectionCard title="还缺哪些数据" style="margin-top:16px">
+      <div v-if="!gapRows.length" class="empty-state small">暂时没有发现需要处理的数据缺口。</div>
+      <SimpleTable v-else :columns="['日期', '交易所', '数据类型', '严重程度', '已拿到行数', '说明']" :data="gapRows" />
     </SectionCard>
 
-    <SectionCard title="缺口原因分类" style="margin-top:16px">
+    <SectionCard title="为什么会缺" style="margin-top:16px">
       <div class="section-note">
-        可行动缺口 {{ gapAnalysis.actionable_count ?? actionableGapCount }} 个；已解释缺口 {{ gapAnalysis.explained_count ?? explainedGapCount }} 个。
-        下表先显示原因汇总，下面只展开可行动明细。
+        还能继续尝试补齐 {{ gapAnalysis.actionable_count ?? actionableGapCount }} 个；其余 {{ gapAnalysis.explained_count ?? explainedGapCount }} 个通常是交易所不提供、品种太冷门或外部源暂时为空。
       </div>
-      <SimpleTable :columns="['原因代码', '数量']" :data="reasonSummaryRows" />
-      <div class="section-note detail-note">可行动明细 Top 80</div>
-      <div v-if="!gapAnalysisRows.length" class="empty-state small success">当前没有可行动缺口；剩余缺口均已解释为源不覆盖、不适用、冷门/停用或第三方为空。</div>
-      <SimpleTable v-else :columns="['交易所', '代码', '名称', '类型', '原因', '可处理']" :data="gapAnalysisRows" />
+      <SimpleTable :columns="['原因', '数量']" :data="reasonSummaryRows" />
+      <div class="section-note detail-note">建议优先处理的明细 Top 80</div>
+      <div v-if="!gapAnalysisRows.length" class="empty-state small success">目前没有必须处理的缺口；剩下的多半是数据源本身暂不支持。</div>
+      <SimpleTable v-else :columns="['交易所', '代码', '名称', '数据类型', '原因', '建议处理']" :data="gapAnalysisRows" />
     </SectionCard>
 
-    <SectionCard title="品种级可用数据集" style="margin-top:16px">
+    <SectionCard title="品种明细" style="margin-top:16px">
       <div class="filters">
         <input v-model="keyword" placeholder="搜索品种/代码/交易所，如 RB / 玻璃 / DCE" />
         <select v-model="qualityFilter">
           <option value="">全部</option>
-          <option value="seat_missing">缺席位排名</option>
-          <option value="archive_missing">缺结构化信号</option>
-          <option value="complete">席位+信号都有</option>
+          <option value="seat_missing">缺席位数据</option>
+          <option value="archive_missing">缺席位变化</option>
+          <option value="complete">数据较完整</option>
         </select>
       </div>
-      <SimpleTable :columns="['交易所', '代码', '名称', '主力', '涨跌幅', '总成交', '总持仓', '席位', '结构信号', '净变化', '资金流', '基差率', '仓单变化', '曲合净持仓']" :data="varietyRows" />
+      <SimpleTable :columns="['交易所', '代码', '名称', '主力合约', '涨跌幅', '总成交', '总持仓', '席位数据', '席位变化', '净变化', '资金流向', '现货价差', '仓单变化', '历史净持仓']" :data="varietyRows" />
     </SectionCard>
   </div>
 </template>
