@@ -73,6 +73,10 @@
                 <b>{{ channelLabel(x.channel) }}</b><span>{{ x.ok === true ? '成功' : x.skipped ? '跳过' : '失败' }}</span><small>{{ x.error || x.reason || x.body || '-' }}</small>
               </div>
             </div>
+            <div v-if="pushDigestText(job)" class="digest-preview">
+              <div class="digest-preview-head">推送文案：{{ parsed(job)?.digest_title || '日报摘要' }}</div>
+              <pre>{{ pushDigestText(job) }}</pre>
+            </div>
             <pre v-if="showRaw(job)">{{ prettyJson(job.result_json) }}</pre>
           </div>
         </div>
@@ -171,6 +175,7 @@ function normalizeError(value) {
   return text.slice(0, 120)
 }
 function channelLabel(channel) { return ({ telegram: 'Telegram', wecom: '企业微信', wechatbot: 'WeChatBot' })[channel] || channel || '-' }
+function pushDigestText(job) { const data = parsed(job); return data?.digest_brief || data?.digest_text || '' }
 function showRaw(job) { const data = parsed(job); return data && !data.collect && !data.seats && !data.dispatch }
 function prettyJson(raw) { try { return JSON.stringify(JSON.parse(raw || '{}'), null, 2) } catch { return raw || '' } }
 
@@ -204,7 +209,9 @@ onMounted(load)
 .result-row { display:grid; grid-template-columns:90px 150px 1fr; gap:10px; align-items:center; padding:8px 10px; border-radius:10px; background:#fff; border:1px solid #eef2f7; }
 .result-row.ok { border-left:4px solid #16a34a; } .result-row.bad { border-left:4px solid #dc2626; } .result-row.skip { border-left:4px solid #94a3b8; }
 .result-row small { color:#64748b; word-break:break-all; }
-pre { margin:0; max-height:320px; overflow:auto; border-radius:12px; background:#0f172a; color:#dbeafe; padding:12px; font-size:12px; }
+.digest-preview { display:grid; gap:8px; }
+.digest-preview-head { color:#334155; font-weight:900; }
+.digest-preview pre, pre { margin:0; max-height:320px; overflow:auto; border-radius:12px; background:#0f172a; color:#dbeafe; padding:12px; font-size:12px; line-height:1.65; white-space:pre-wrap; word-break:break-word; }
 .empty { color:#94a3b8; text-align:center; padding:28px; background:#f8fafc; border-radius:14px; }
 @media (max-width:1100px) { .filters, .job-main { grid-template-columns:1fr; } .job-message { white-space:normal; } .result-row { grid-template-columns:1fr; } }
 </style>

@@ -244,7 +244,17 @@ async def _dispatch_report_push(db: Session, payload: dict[str, Any], source: st
         skipped = [x for x in results if x.get("skipped")]
         job.status = "failed" if failed and not sent else "partial" if failed or skipped else "success"
         job.message = f"sent={len(sent)} skipped={len(skipped)} failed={len(failed)}"
-        job.result_json = json.dumps({"dispatch": results, "digest_title": digest.get("title"), "source": source}, ensure_ascii=False, default=str)
+        job.result_json = json.dumps(
+            {
+                "dispatch": results,
+                "digest_title": digest.get("title"),
+                "digest_brief": digest.get("brief"),
+                "digest_text": digest.get("text"),
+                "source": source,
+            },
+            ensure_ascii=False,
+            default=str,
+        )
         job.finished_at = datetime.utcnow()
         db.commit()
     except Exception as exc:  # noqa: BLE001
