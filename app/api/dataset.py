@@ -12,6 +12,7 @@ from app.services.data_mart import build_variety_dataset, materialize_variety_da
 from app.services.gap_analysis import build_gap_analysis
 from app.services.quhe_collector import collect_quhe_enhancements
 from app.services.raw_archive import list_archives, read_archive, source_file_item
+from app.services.raw_replay import replay_source_file
 from app.services.trading_day import normalize_trade_date
 
 router = APIRouter(prefix="/api/dataset", tags=["dataset"])
@@ -104,6 +105,11 @@ def get_raw_archive(file_id: int, db: Session = Depends(get_db)):
     if not row:
         return {"error": "not_found"}
     return read_archive(row)
+
+
+@router.post("/raw-archives/{file_id}/replay")
+def replay_raw_archive(file_id: int, sample_limit: int = 10, db: Session = Depends(get_db)):
+    return replay_source_file(db, file_id, sample_limit=sample_limit)
 
 
 @router.get("/gaps")

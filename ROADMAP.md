@@ -89,6 +89,11 @@
 - 日行情、席位、曲合增强源、官方仓单补充会把 vendor-shaped payload 写入 `data/raw_archive/`。
 - 新增 raw archive 查询接口，后续 parser 修复可直接读取历史原始响应重放。
 
+### v0.3.3：raw archive parser replay
+- 新增 raw replay 服务，可读取 source_files 中的原始响应并 dry-run 运行 parser。
+- 首批支持日行情和席位 parser 重放，输出 parsed/skipped/error/sample/stats，不修改数据库。
+- 新增 `POST /api/dataset/raw-archives/{file_id}/replay`，后续修 parser 可先 dry-run 对比。
+
 ---
 
 
