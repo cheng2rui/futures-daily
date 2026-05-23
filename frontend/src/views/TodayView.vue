@@ -163,6 +163,12 @@
                     <b>{{ ev.label }}</b><span>{{ ev.text }}</span>
                   </div>
                 </div>
+                <div v-if="item.history_context?.highlights?.length" class="history-context">
+                  <div class="card-section-label">历史位置</div>
+                  <span v-for="h in visibleItems(item.history_context.highlights || [], card, 3)" :key="`${h.key}-${h.window}`">
+                    {{ h.label }}近{{ h.window }}日分位 {{ h.percentile }}%
+                  </span>
+                </div>
                 <div v-if="item.dimensions?.length" class="dimension-tags">
                   <span v-for="dim in item.dimensions" :key="dim.name">{{ dim.name }} {{ dim.score }}</span>
                 </div>
@@ -804,6 +810,9 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .bias-positive { color:#d93655; } .bias-negative { color:#12966b; } .bias-mixed { color:#b45309; } .bias-neutral { color:#475569; }
 .dimension-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
 .dimension-tags span { color:#526184; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:999px; padding:4px 7px; font-size:12px; font-weight:800; }
+.history-context { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
+.history-context .card-section-label { flex-basis:100%; margin-top:0; }
+.history-context span { background:#eef2ff; color:#3157d5; border:1px solid #dfe6ff; border-radius:999px; padding:5px 8px; font-size:12px; font-weight:900; }
 .evidence-chain { display:grid; gap:7px; margin-top:10px; padding:9px; border-radius:13px; background:#f8fafc; border:1px solid #edf2f7; }
 .evidence-chain.prominent { background:#f8fbff; border-color:#dfe8ff; padding:11px; }
 .evidence-title { margin-top:0; color:#3157d5; }
