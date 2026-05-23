@@ -14,6 +14,17 @@
     <div v-if="notice" class="notice success">{{ notice }}</div>
     <div v-if="error" class="notice error">{{ error }}</div>
 
+    <SectionCard v-if="operationResult" title="最近一次操作结果" class="op-card">
+      <div class="op-summary">{{ operationResult.summary || '暂无总结' }}</div>
+      <div class="replay-stats">
+        <span>核心覆盖 {{ operationResult.coverage_diff?.core_coverage_after ?? 0 }}% <em>({{ fmtDelta(operationResult.coverage_diff?.core_coverage_delta) }})</em></span>
+        <span>综合覆盖 {{ operationResult.coverage_diff?.overall_coverage_after ?? 0 }}% <em>({{ fmtDelta(operationResult.coverage_diff?.overall_coverage_delta) }})</em></span>
+        <span>改善 {{ operationResult.coverage_diff?.improved_cells ?? 0 }}</span>
+        <span>回退 {{ operationResult.coverage_diff?.regressed_cells ?? 0 }}</span>
+      </div>
+      <div class="op-tail">{{ operationResult.note || operationResult.message || '-' }}</div>
+    </SectionCard>
+
     <div class="kpi-row">
       <KpiCard label="核心覆盖" :value="`${coverageSummary.core_coverage_pct ?? 0}%`" color="#3f5efb" />
       <KpiCard label="综合覆盖" :value="`${coverageSummary.overall_coverage_pct ?? 0}%`" color="#16c79a" />
@@ -116,6 +127,7 @@
         <div class="replay-stats">
           <span>输入 {{ replayResult.input_rows ?? 0 }}</span>
           <span>解析 {{ replayResult.parsed_rows ?? 0 }}</span>
+          <span>成功率 {{ replayResult.success_rate ?? 0 }}%</span>
           <span>跳过 {{ replayResult.skipped_rows ?? 0 }}</span>
           <span>错误 {{ replayResult.error_count ?? 0 }}</span>
         </div>
@@ -145,6 +157,7 @@ const archiveKind = ref('')
 const replayResult = ref(null)
 const replaying = ref(null)
 const runningAction = ref('')
+const operationResult = ref(null)
 const notice = ref('')
 const error = ref('')
 
@@ -161,6 +174,7 @@ function cellLabel(c) {
 }
 function fmtNum(v) { const n = Number(v || 0); if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`; return String(Math.round(n)) }
 function fmtBytes(v) { const n = Number(v || 0); if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`; if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`; return `${n} B` }
+function fmtDelta(v) { const n = Number(v || 0); return n > 0 ? `+${n}%` : `${n}%` }
 
 async function resolveLatestDate() {
   const { data } = await api.get('/dataset/varieties/latest')
@@ -210,6 +224,12 @@ async function replay(row) {
   try {
     const { data } = await api.post(`/dataset/raw-archives/${row.id}/replay`)
     replayResult.value = data
+    operationResult.value = {
+      summary: `Replay #${row.id}：解析 ${data.parsed_rows ?? 0}/${data.input_rows ?? 0} 行，成功率 ${data.success_rate ?? 0}%`,
+      message: data.message,
+      note: data.status === 'unsupported' ? '该类型暂未实现 parser replay。' : 'dry-run only，未修改数据库。',
+      coverage_diff: null,
+    }
   } catch (e) {
     error.value = e?.response?.data?.detail || e?.message || 'Replay 失败'
   } finally {
@@ -225,6 +245,12 @@ async function runRecollect(exchange, kind) {
   try {
     const { data } = await api.post(`/reports/${tradeDate.value}/recollect`, null, { params: { exchange, kinds: kind, rebuild: true } })
     notice.value = data?.summary || `${exchange} ${kindLabel(kind)}补采完成`
+    operationResult.value = {
+      summary: data?.coverage_diff?.summary || data?.summary || `${exchange} ${kindLabel(kind)}补采完成`,
+      message: data?.summary,
+      note: `job #${data?.job_id || '-'} · ${data?.job_status || '-'}`,
+      coverage_diff: data?.coverage_diff || {},
+    }
     await load()
   } catch (e) {
     error.value = e?.response?.data?.detail || e?.message || '补采失败'
@@ -248,6 +274,10 @@ onMounted(load)
 .notice { margin-bottom:16px; padding:11px 14px; border-radius:10px; }
 .notice.success { background:#effaf5; color:#15845f; border:1px solid #d6f3e5; }
 .notice.error { background:#fff1f2; color:#be123c; border:1px solid #fecdd3; }
+.op-card { margin-bottom:16px; }
+.op-summary { color:#0f172a; font-weight:900; line-height:1.5; margin-bottom:10px; }
+.op-tail { margin-top:10px; color:#64748b; font-size:13px; }
+.replay-stats em { font-style:normal; color:#64748b; }
 .kpi-row { display:grid; grid-template-columns: repeat(4, 1fr); gap:16px; margin-bottom:16px; }
 .matrix-table, .archive-table { width:100%; overflow:auto; }
 table { width:100%; min-width:860px; border-collapse:separate; border-spacing:0; font-size:13px; }

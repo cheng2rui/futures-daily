@@ -57,15 +57,18 @@ def replay_source_row(row: SourceFile, *, sample_limit: int = 10) -> dict[str, A
         except Exception as exc:  # noqa: BLE001
             errors.append({"index": idx, "error": f"{type(exc).__name__}: {exc}", "row": raw})
 
+    parsed_rows = len(parsed)
+    success_rate = round(parsed_rows / len(rows) * 100, 1) if rows else 0
     return {
         "file": source_file_item(row),
         "status": "ok" if parsed and not errors else "partial" if parsed else "failed",
         "kind": row.kind,
         "dry_run": True,
         "input_rows": len(rows),
-        "parsed_rows": len(parsed),
+        "parsed_rows": parsed_rows,
         "skipped_rows": len(errors),
         "error_count": len(errors),
+        "success_rate": success_rate,
         "errors": errors[:20],
         "sample": strip_raw(parsed[:sample_limit]),
         "stats": build_stats(row.kind, parsed),

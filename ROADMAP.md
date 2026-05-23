@@ -104,6 +104,11 @@
 - 页面支持按交易所/类型筛选 raw archive，并直接触发 parser replay dry-run。
 - DCE/INE 的 daily/seat_rank 缺口支持前端一键调用 recollect 并刷新诊断结果。
 
+### v0.3.6：补采 / replay 结果对比
+- 新增 coverage diff 服务，对比补采前后核心覆盖率、综合覆盖率、cell 状态和行数变化。
+- `/api/reports/{trade_date}/recollect` 返回 `coverage_diff`，JobRun 也记录 before/after coverage matrix。
+- raw archive replay 增加解析成功率，数据诊断页展示最近一次补采或 replay 的影响摘要。
+
 ---
 
 

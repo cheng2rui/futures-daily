@@ -12,6 +12,8 @@ from app.config import get_settings
 from app.db import get_db
 from app.models import JobRun, Report
 from app.services.collector import collect_daily_market, collect_seat_ranks
+from app.services.coverage_diff import diff_coverage_matrix
+from app.services.coverage_matrix import build_coverage_matrix
 from app.services.data_quality import build_data_quality
 from app.services.news_collector import collect_news_digest
 from app.services.quhe_collector import collect_quhe_enhancements
@@ -167,12 +169,15 @@ def recollect_report_data(
     db.commit()
     try:
         before_quality = build_data_quality(db, trade_date)
+        before_matrix = build_coverage_matrix(db, trade_date, sync_gaps=False)
         exchanges = [selected_exchange] if selected_exchange else None
         collect_result = collect_daily_market(db, trade_date, exchanges=exchanges) if "daily" in normalized_kinds else None
         seat_result = collect_seat_ranks(db, trade_date, exchanges=exchanges) if "seat_rank" in normalized_kinds else None
         report = build_report(db, trade_date) if rebuild else None
         quality = build_data_quality(db, trade_date)
-        summary = _recollect_summary(selected_exchange or "ALL", normalized_kinds, collect_result, seat_result, before_quality, quality)
+        after_matrix = build_coverage_matrix(db, trade_date, sync_gaps=False)
+        coverage_diff = diff_coverage_matrix(before_matrix, after_matrix)
+        summary = _recollect_summary(selected_exchange or "ALL", normalized_kinds, collect_result, seat_result, before_quality, quality, coverage_diff)
         job.status = "success" if quality.get("status") == "ok" else "partial"
         job.message = summary
         job.result_json = json.dumps(
@@ -184,6 +189,9 @@ def recollect_report_data(
                 "rebuild": bool(rebuild),
                 "before_quality": before_quality,
                 "quality": quality,
+                "before_coverage_matrix": before_matrix,
+                "after_coverage_matrix": after_matrix,
+                "coverage_diff": coverage_diff,
                 "summary": summary,
             },
             ensure_ascii=False,
@@ -205,6 +213,7 @@ def recollect_report_data(
         "collect": collect_result,
         "seats": seat_result,
         "data_quality": quality,
+        "coverage_diff": coverage_diff,
         "summary": summary,
         "report": {"score": report.score, "summary": report.summary} if report else None,
         "job_id": job.id,
@@ -212,7 +221,7 @@ def recollect_report_data(
     }
 
 
-def _recollect_summary(exchange: str, kinds: set[str], collect_result: dict | None, seat_result: dict | None, before_quality: dict, after_quality: dict) -> str:
+def _recollect_summary(exchange: str, kinds: set[str], collect_result: dict | None, seat_result: dict | None, before_quality: dict, after_quality: dict, coverage_diff: dict | None = None) -> str:
     parts = [f"{exchange} 补采完成"]
     if "daily" in kinds and collect_result:
         saved = sum(int(x.get("saved") or 0) for x in collect_result.get("results", []))
@@ -228,6 +237,8 @@ def _recollect_summary(exchange: str, kinds: set[str], collect_result: dict | No
         parts.append(f"可信度 {before}% → {after}%")
     else:
         parts.append(f"可信度 {after}%")
+    if coverage_diff and coverage_diff.get("changed_cells"):
+        parts.append(coverage_diff.get("summary") or f"覆盖变化 {coverage_diff.get('changed_cells')} 项")
     return "；".join(parts)
 
 

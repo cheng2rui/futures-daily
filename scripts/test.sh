@@ -10,6 +10,7 @@ export FUTURES_DAILY_DB="${FUTURES_DAILY_DB:-tmp/test.db}"
 python3 -m compileall app tests
 .venv/bin/python tests/test_gap_analysis.py
 .venv/bin/python tests/test_coverage_matrix.py
+.venv/bin/python tests/test_coverage_diff.py
 .venv/bin/python tests/test_raw_archive.py
 .venv/bin/python tests/test_raw_replay.py
 .venv/bin/python tests/test_source_diagnostics.py
