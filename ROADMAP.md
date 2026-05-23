@@ -114,6 +114,11 @@
 - 前端“数据诊断”页新增数据源健康卡片，能直接看到 akshare / quheqihuo / fallback 的健康状态。
 - 健康评分优先解释问题来源，不做黑盒分数。
 
+### v0.3.8：自动补采策略 / Retry Planner
+- 新增 retry planner，根据覆盖矩阵和 source health 自动生成补采步骤、跳过项、推荐源和风险说明。
+- 新增 `GET /api/quality/retry-plan/{trade_date}`。
+- 数据诊断页新增“自动补采计划”，支持执行第一步或指定步骤，核心补采走 recollect，增强数据走 collect-quhe。
+
 ---
 
 

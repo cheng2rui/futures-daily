@@ -55,6 +55,38 @@
       </div>
     </SectionCard>
 
+    <SectionCard title="自动补采计划" style="margin-top:16px">
+      <div class="retry-head">
+        <div>
+          <b>{{ retryPlan.summary?.summary || '暂无补采建议' }}</b>
+          <span>跳过 {{ retryPlan.summary?.skipped ?? 0 }} 项不可自动处理数据。</span>
+        </div>
+        <button class="secondary" :disabled="loadingPlan || !retryPlanSteps.length" @click="runFirstRetryStep">{{ loadingPlan ? '执行中...' : '执行第一步' }}</button>
+      </div>
+      <div v-if="!retryPlanSteps.length" class="empty-state small success">当前没有建议自动补采的步骤。</div>
+      <div v-else class="retry-list">
+        <article v-for="step in retryPlanSteps" :key="`${step.order}-${step.type}-${step.exchange}-${step.kind}`" class="retry-step">
+          <div class="retry-top">
+            <b>#{{ step.order }} {{ step.type }} · {{ exchangeName(step.exchange) }} · {{ kindLabel(step.kind) }}</b>
+            <em>优先级 {{ step.priority }}</em>
+          </div>
+          <p>{{ step.reason }}</p>
+          <div class="retry-meta">
+            <span>源：{{ step.source }} / {{ step.source_status }}</span>
+            <span>预期：{{ step.expected_effect }}</span>
+            <span>风险：{{ step.risk }}</span>
+          </div>
+          <button class="mini-action" :disabled="loadingPlan" @click="runRetryStep(step)">执行这一步</button>
+        </article>
+      </div>
+      <details v-if="retryPlanSkipped.length" class="skip-details">
+        <summary>查看跳过项 {{ retryPlanSkipped.length }} 个</summary>
+        <div class="skip-list">
+          <span v-for="item in retryPlanSkipped" :key="`${item.exchange}-${item.kind}`">{{ exchangeName(item.exchange) }} · {{ kindLabel(item.kind) }}：{{ item.reason }}</span>
+        </div>
+      </details>
+    </SectionCard>
+
     <SectionCard title="覆盖矩阵" style="margin-top:16px">
       <div class="matrix-table">
         <table>
@@ -174,6 +206,7 @@ const tradeDate = ref('')
 const tradeDateInput = ref('')
 const coverage = ref({ rows: [], kinds: [], summary: {} })
 const sourceHealth = ref({ sources: [], summary: {} })
+const retryPlan = ref({ steps: [], skipped: [], summary: {} })
 const diagnosticData = ref({ exchanges: [] })
 const archives = ref([])
 const archiveExchange = ref('')
@@ -181,6 +214,7 @@ const archiveKind = ref('')
 const replayResult = ref(null)
 const replaying = ref(null)
 const runningAction = ref('')
+const loadingPlan = ref(false)
 const operationResult = ref(null)
 const notice = ref('')
 const error = ref('')
@@ -191,6 +225,8 @@ const coverageSummary = computed(() => coverage.value.summary || {})
 const sourceHealthRows = computed(() => sourceHealth.value.sources || [])
 const sourceHealthSummary = computed(() => sourceHealth.value.summary || {})
 const sourceHealthColor = computed(() => sourceHealthSummary.value.status === 'good' ? '#16c79a' : sourceHealthSummary.value.status === 'warn' ? '#f5a623' : '#e94560')
+const retryPlanSteps = computed(() => retryPlan.value.steps || [])
+const retryPlanSkipped = computed(() => retryPlan.value.skipped || [])
 const diagnostics = computed(() => diagnosticData.value.exchanges || [])
 
 function cell(row, kind) { return row?.cells?.[kind] || { status: 'missing', rows: 0, message: '未采集' } }
@@ -217,13 +253,15 @@ async function load() {
     if (!date) throw new Error('暂无可诊断日期')
     tradeDate.value = date
     tradeDateInput.value = date
-    const [coverageResp, healthResp, diagResp] = await Promise.all([
+    const [coverageResp, healthResp, planResp, diagResp] = await Promise.all([
       api.get(`/quality/coverage/${date}`),
       api.get(`/quality/source-health/${date}`),
+      api.get(`/quality/retry-plan/${date}`),
       api.get(`/quality/diagnostics/${date}`),
     ])
     coverage.value = coverageResp.data || { rows: [], kinds: [], summary: {} }
     sourceHealth.value = healthResp.data || { sources: [], summary: {} }
+    retryPlan.value = planResp.data || { steps: [], skipped: [], summary: {} }
     diagnosticData.value = diagResp.data || { exchanges: [] }
     await loadArchives()
   } catch (e) {
@@ -267,8 +305,24 @@ async function replay(row) {
 }
 
 async function runRecollect(exchange, kind) {
+  return runRecollectInternal(exchange, kind)
+}
+
+async function runFirstRetryStep() {
+  const step = retryPlanSteps.value[0]
+  if (step) await runRetryStep(step)
+}
+
+async function runRetryStep(step) {
+  if (!step) return
+  if (step.type === 'recollect') return runRecollectInternal(step.exchange, step.kind)
+  if (step.type === 'collect_quhe') return runCollectQuhe(step)
+}
+
+async function runRecollectInternal(exchange, kind) {
   if (!tradeDate.value || !exchange || !kind) return
   runningAction.value = `${exchange}-${kind}`
+  loadingPlan.value = true
   error.value = ''
   notice.value = ''
   try {
@@ -285,6 +339,29 @@ async function runRecollect(exchange, kind) {
     error.value = e?.response?.data?.detail || e?.message || '补采失败'
   } finally {
     runningAction.value = ''
+    loadingPlan.value = false
+  }
+}
+
+async function runCollectQuhe(step) {
+  if (!tradeDate.value) return
+  loadingPlan.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    const { data } = await api.post(`/dataset/collect-quhe/${tradeDate.value}`)
+    notice.value = `${step?.source || '增强源'}刷新完成`
+    operationResult.value = {
+      summary: `增强源刷新完成：${data?.materialized?.count ?? 0} 个品种已物化`,
+      message: step?.reason || '',
+      note: '已刷新曲合/官方增强数据；请查看覆盖矩阵是否改善。',
+      coverage_diff: {},
+    }
+    await load()
+  } catch (e) {
+    error.value = e?.response?.data?.detail || e?.message || '增强源刷新失败'
+  } finally {
+    loadingPlan.value = false
   }
 }
 
@@ -344,6 +421,19 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .issue-card p { color:#475569; line-height:1.5; margin:8px 0; }
 .issue-meta { display:grid; gap:5px; color:#64748b; font-size:12px; }
 .action-list, .archive-toolbar, .replay-stats { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.retry-head { display:flex; justify-content:space-between; gap:12px; align-items:center; color:#334155; margin-bottom:12px; }
+.retry-head b { display:block; color:#0f172a; }
+.retry-head span { display:block; margin-top:4px; color:#64748b; font-size:13px; }
+.retry-list { display:grid; gap:10px; }
+.retry-step { border:1px solid #e8edf5; border-radius:14px; padding:13px; background:#fff; display:grid; gap:9px; }
+.retry-top { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+.retry-top b { color:#0f172a; }
+.retry-top em { font-style:normal; color:#b45309; background:#fff7ed; border:1px solid #fed7aa; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:950; }
+.retry-step p { margin:0; color:#475569; line-height:1.5; }
+.retry-meta { display:grid; gap:5px; color:#64748b; font-size:12px; }
+.skip-details { margin-top:12px; color:#64748b; }
+.skip-details summary { cursor:pointer; font-weight:900; color:#334155; }
+.skip-list { display:grid; gap:6px; margin-top:8px; font-size:12px; }
 .empty-state { padding:24px; text-align:center; color:#888; background:#fafafa; border-radius:10px; }
 .empty-state.small { padding:18px; } .empty-state.success { color:#15845f; background:#effaf5; border:1px solid #d6f3e5; }
 .empty-cell { text-align:center; color:#94a3b8; padding:24px !important; }
@@ -351,5 +441,5 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .replay-head { display:flex; justify-content:space-between; gap:12px; color:#334155; }
 .replay-stats span { background:#eef2ff; color:#3157d5; border:1px solid #dbe3ff; border-radius:999px; padding:5px 9px; font-weight:900; font-size:12px; }
 pre { margin-top:12px; max-height:360px; overflow:auto; background:#0f172a; color:#dbeafe; border-radius:12px; padding:12px; font-size:12px; }
-@media (max-width: 980px) { .kpi-row, .exchange-grid, .source-grid { grid-template-columns:1fr; } .page-head, .head-actions, .source-health-head { flex-direction:column; align-items:stretch; } }
+@media (max-width: 980px) { .kpi-row, .exchange-grid, .source-grid { grid-template-columns:1fr; } .page-head, .head-actions, .source-health-head, .retry-head { flex-direction:column; align-items:stretch; } }
 </style>
