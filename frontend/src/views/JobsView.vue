@@ -2,16 +2,16 @@
   <div class="jobs-page">
     <div class="page-head">
       <div>
-        <h2 class="page-title">任务记录</h2>
+        <h2 class="page-title">运行记录</h2>
         <p>查看系统最近做过什么：生成日报、更新行情、补齐数据、发送推送。</p>
       </div>
       <button class="refresh" :disabled="loading" @click="load">{{ loading ? '刷新中...' : '刷新' }}</button>
     </div>
 
-    <SectionCard title="任务筛选">
+    <SectionCard title="筛选记录">
       <div class="filters">
         <label>
-          <span>任务类型</span>
+          <span>做了什么</span>
           <select v-model="typeFilter">
             <option value="all">全部</option>
             <option value="generate_report">生成日报</option>
@@ -37,7 +37,7 @@
       </div>
     </SectionCard>
 
-    <SectionCard title="最近任务" style="margin-top:16px">
+    <SectionCard title="最近运行情况" style="margin-top:16px">
       <div class="job-list">
         <div v-for="job in filteredJobs" :key="job.id" class="job-card" :class="statusTone(job.status)">
           <div class="job-main" @click="toggle(job.id)">

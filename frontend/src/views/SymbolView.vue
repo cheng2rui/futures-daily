@@ -2,20 +2,20 @@
   <div class="symbol-view">
     <div class="page-head">
       <div>
-        <h2 class="page-title">{{ symbol }} 详情</h2>
-        <p class="muted">来自 /api/markets/bars?symbol={{ symbol }} 的日行情数据</p>
+        <h2 class="page-title">{{ symbol }} 行情明细</h2>
+        <p class="muted">查看这个品种最近记录到的每日价格、成交和持仓变化。</p>
       </div>
       <router-link to="/" class="back-link">返回今日</router-link>
     </div>
 
     <div class="kpi-row">
-      <KpiCard label="记录数" :value="bars.length" color="#e94560" />
+      <KpiCard label="交易日数" :value="bars.length" color="#e94560" />
       <KpiCard label="最新收盘" :value="fmt(latest?.close)" color="#16c79a" />
       <KpiCard label="最高价" :value="fmt(stats.high)" color="#0f3460" />
       <KpiCard label="累计成交量" :value="fmt(stats.volume)" color="#f5a623" />
     </div>
 
-    <SectionCard title="基础统计">
+    <SectionCard title="近期概况">
       <div v-if="loading" class="empty-state">正在加载 {{ symbol }} 行情...</div>
       <div v-else-if="!bars.length" class="empty-state">暂无 {{ symbol }} 日行情。可先生成日报或检查该品种是否已采集。</div>
       <div v-else class="info-grid">
@@ -26,7 +26,7 @@
       </div>
     </SectionCard>
 
-    <SectionCard title="日行情列表" style="margin-top: 16px;">
+    <SectionCard title="每日行情" style="margin-top: 16px;">
       <SimpleTable :columns="columns" :data="rows" />
     </SectionCard>
   </div>

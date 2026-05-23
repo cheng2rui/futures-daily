@@ -1,9 +1,9 @@
 <template>
   <div class="history">
-    <h2 class="page-title">历史日报</h2>
-    <SectionCard title="日期列表">
+    <h2 class="page-title">历史复盘</h2>
+    <SectionCard title="已生成的日报">
       <div v-if="loading" class="empty-state">正在加载历史日报...</div>
-      <div v-else-if="!reports.length" class="empty-state">暂无历史日报，先去「今日」生成一份。</div>
+      <div v-else-if="!reports.length" class="empty-state">还没有历史日报，先去「今日看板」生成一份。</div>
       <div v-else class="date-list">
         <router-link
           v-for="item in reports"
@@ -45,7 +45,7 @@ function formatDateTime(value) {
 }
 
 function statusText(status) {
-  return ({ generated: '已生成', draft: '草稿', failed: '失败' }[status]) || status || '未知'
+  return ({ generated: '已完成', draft: '未完成', failed: '失败' }[status]) || status || '未知'
 }
 
 function statusClass(status) {

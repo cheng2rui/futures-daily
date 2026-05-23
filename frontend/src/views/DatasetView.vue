@@ -18,21 +18,21 @@
       <KpiCard label="可尝试补齐" :value="gapAnalysis.actionable_count ?? actionableGapCount" :color="(gapAnalysis.actionable_count ?? actionableGapCount) ? '#e94560' : '#16c79a'" />
     </div>
 
-    <SectionCard title="六大交易所数据情况">
+    <SectionCard title="交易所数据是否齐全">
       <SimpleTable :columns="['交易所', '品种数', '有席位数据', '有席位变化', '行情', '席位', '席位整理', '说明']" :data="exchangeRows" />
     </SectionCard>
 
-    <SectionCard title="还缺哪些数据" style="margin-top:16px">
+    <SectionCard title="哪些数据还没拿到" style="margin-top:16px">
       <div v-if="!gapRows.length" class="empty-state small">暂时没有发现需要处理的数据缺口。</div>
       <SimpleTable v-else :columns="['日期', '交易所', '数据类型', '严重程度', '已拿到行数', '说明']" :data="gapRows" />
     </SectionCard>
 
-    <SectionCard title="为什么会缺" style="margin-top:16px">
+    <SectionCard title="缺失原因" style="margin-top:16px">
       <div class="section-note">
         还能继续尝试补齐 {{ gapAnalysis.actionable_count ?? actionableGapCount }} 个；其余 {{ gapAnalysis.explained_count ?? explainedGapCount }} 个通常是交易所不提供、品种太冷门或外部源暂时为空。
       </div>
       <SimpleTable :columns="['原因', '数量']" :data="reasonSummaryRows" />
-      <div class="section-note detail-note">建议优先处理的明细 Top 80</div>
+      <div class="section-note detail-note">建议优先处理的明细</div>
       <div v-if="!gapAnalysisRows.length" class="empty-state small success">目前没有必须处理的缺口；剩下的多半是数据源本身暂不支持。</div>
       <SimpleTable v-else :columns="['交易所', '代码', '名称', '数据类型', '原因', '建议处理']" :data="gapAnalysisRows" />
     </SectionCard>

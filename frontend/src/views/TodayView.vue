@@ -27,7 +27,7 @@
       :quality-ok-text="qualityOkText"
     />
 
-    <div v-if="isEmptyReport" class="empty-state large">暂无日报数据。建议先生成日报，再查看市场结构、席位信号和数据资产。</div>
+    <div v-if="isEmptyReport" class="empty-state large">暂无日报数据。建议先生成日报，再查看市场变化、席位动向和数据完整度。</div>
 
     <template v-else>
       <div v-if="report.risk_flags?.length" class="risk-strip">
@@ -290,21 +290,21 @@ const DASHBOARD_MODE_KEY = 'futures-daily.today.dashboard.mode.v1'
 const defaultDashboardCards = [
   { id: 'watchFocus', title: '我的关注', size: 'wide', mode: 'intraday' },
   { id: 'signals', title: '市场风向', mode: 'intraday' },
-  { id: 'sectors', title: '板块强弱 Top', mode: 'intraday' },
-  { id: 'abnormal', title: '盘中异动', size: 'wide', mode: 'intraday' },
-  { id: 'watchDigest', title: '自选监控', size: 'wide', mode: 'intraday' },
-  { id: 'gainers', title: '涨幅 TOP10', mode: 'intraday' },
-  { id: 'losers', title: '跌幅 TOP10', mode: 'intraday' },
-  { id: 'volumeTop', title: '成交量 TOP10', size: 'chart', mode: 'intraday' },
-  { id: 'watchRows', title: '自选品种', mode: 'intraday' },
-  { id: 'news', title: '资讯观点', mode: 'intraday' },
-  { id: 'brief', title: '复盘摘要', size: 'wide', mode: 'review' },
-  { id: 'tomorrow', title: '明日观察清单', mode: 'review' },
-  { id: 'sectorVolume', title: '板块成交 / 持仓', size: 'chart', mode: 'review' },
-  { id: 'longSeat', title: '席位多头增仓 TOP', size: 'chart', mode: 'review' },
-  { id: 'shortSeat', title: '席位空头增仓 TOP', size: 'chart', mode: 'review' },
-  { id: 'seatSignals', title: '结构信号 TOP', mode: 'review' },
-  { id: 'breadth', title: '板块广度', mode: 'review' },
+  { id: 'sectors', title: '强弱板块', mode: 'intraday' },
+  { id: 'abnormal', title: '值得关注的异动', size: 'wide', mode: 'intraday' },
+  { id: 'watchDigest', title: '自选品种提醒', size: 'wide', mode: 'intraday' },
+  { id: 'gainers', title: '涨得最多', mode: 'intraday' },
+  { id: 'losers', title: '跌得最多', mode: 'intraday' },
+  { id: 'volumeTop', title: '成交最活跃', size: 'chart', mode: 'intraday' },
+  { id: 'watchRows', title: '自选列表', mode: 'intraday' },
+  { id: 'news', title: '相关资讯', mode: 'intraday' },
+  { id: 'brief', title: '今天总结', size: 'wide', mode: 'review' },
+  { id: 'tomorrow', title: '明天重点看什么', mode: 'review' },
+  { id: 'sectorVolume', title: '板块成交和持仓', size: 'chart', mode: 'review' },
+  { id: 'longSeat', title: '多头加仓最多', size: 'chart', mode: 'review' },
+  { id: 'shortSeat', title: '空头加仓最多', size: 'chart', mode: 'review' },
+  { id: 'seatSignals', title: '席位变化信号', mode: 'review' },
+  { id: 'breadth', title: '板块涨跌分布', mode: 'review' },
   { id: 'quality', title: '数据完整度', size: 'wide', mode: 'review' },
 ]
 const dashboardCards = ref(loadDashboardLayout())

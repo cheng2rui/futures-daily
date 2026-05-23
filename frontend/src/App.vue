@@ -10,11 +10,11 @@
       </div>
       <nav class="nav-links">
         <router-link to="/">今日看板</router-link>
-        <router-link to="/history">历史日报</router-link>
-        <router-link to="/seats">持仓席位</router-link>
-        <router-link to="/dataset">数据资产</router-link>
-        <router-link to="/jobs">采集任务</router-link>
-        <router-link to="/settings">系统设置</router-link>
+        <router-link to="/history">历史复盘</router-link>
+        <router-link to="/seats">席位动向</router-link>
+        <router-link to="/dataset">数据完整度</router-link>
+        <router-link to="/jobs">运行记录</router-link>
+        <router-link to="/settings">设置</router-link>
       </nav>
       <div class="side-foot">
         <span class="status-dot"></span>
