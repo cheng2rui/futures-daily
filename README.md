@@ -43,6 +43,27 @@ docker compose up -d --build
 
 访问：<http://localhost:8500>
 
+
+## 发版
+
+使用脚本统一后端版本、前端版本、Git tag、Docker 构建 commit 和 `/api/health` 校验：
+
+```bash
+scripts/release.sh 0.2.2
+```
+
+常用选项：
+
+- `--no-push`：只本地提交/tag/部署，不推送 GitHub
+- `--no-deploy`：只更新版本并提交/tag，不重建容器
+- `--no-tag`：只做版本提交，不创建 tag
+
+发版后可检查：
+
+```bash
+curl http://localhost:8500/api/health
+```
+
 ## 开发
 
 后端：FastAPI + SQLite + APScheduler + AkShare
