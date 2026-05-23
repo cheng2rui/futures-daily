@@ -38,6 +38,27 @@
         </article>
       </section>
 
+      <section class="ask-daily-card">
+        <div class="ask-head">
+          <div>
+            <b>问日报</b>
+            <span>直接问今天的市场、重点品种、席位变化或数据是否齐全。</span>
+          </div>
+          <button class="secondary light" :disabled="askingDaily" @click="askDaily()">{{ askingDaily ? '回答中...' : '提问' }}</button>
+        </div>
+        <div class="ask-input-row">
+          <input v-model="dailyQuestion" placeholder="例如：今天哪些品种最异常？明天重点看什么？" @keyup.enter="askDaily()" />
+        </div>
+        <div class="ask-chips">
+          <button v-for="q in quickQuestions" :key="q" type="button" @click="askDaily(q)">{{ q }}</button>
+        </div>
+        <div v-if="dailyAnswer" class="ask-answer">
+          <div class="ask-answer-title">{{ dailyAnswer.title }}</div>
+          <p>{{ dailyAnswer.headline }}</p>
+          <ul><li v-for="item in dailyAnswer.bullets" :key="item">{{ item }}</li></ul>
+        </div>
+      </section>
+
       <div v-if="report.risk_flags?.length" class="risk-strip">
         <div v-for="flag in report.risk_flags" :key="flag" class="risk-chip">⚠ {{ flag }}</div>
       </div>
@@ -290,6 +311,10 @@ const pushing = ref(false)
 const copied = ref(false)
 const error = ref('')
 const notice = ref('')
+const dailyQuestion = ref('')
+const dailyAnswer = ref(null)
+const askingDaily = ref(false)
+const quickQuestions = ['今天哪些品种最异常？', '我的自选品种怎么样？', '明天重点看什么？', '数据够不够用？', '席位有什么变化？']
 const recollecting = ref({})
 const bulkRecollecting = ref(false)
 const report = ref(emptyReport())
@@ -563,7 +588,22 @@ async function pushReport() {
 }
 
 async function loadHealth() { try { const { data } = await api.get('/health'); appVersion.value = data?.version || appVersion.value } catch {} }
-async function load() { loading.value = true; error.value = ''; try { const url = viewingDate.value ? `/reports/${viewingDate.value}` : '/reports/latest'; const { data } = await api.get(url); report.value = data || emptyReport() } catch (err) { report.value = emptyReport(); error.value = viewingDate.value ? `未找到 ${formatDate(viewingDate.value)} 的日报。` : '日报加载失败，请稍后重试。' } finally { loading.value = false } }
+async function askDaily(question = '') {
+  const q = question || dailyQuestion.value
+  if (!q.trim() || askingDaily.value) return
+  dailyQuestion.value = q
+  askingDaily.value = true
+  error.value = ''
+  try {
+    const { data } = await api.post('/assistant/ask', { question: q, trade_date: report.value.date || viewingDate.value || null })
+    dailyAnswer.value = data
+  } catch (err) {
+    error.value = '暂时回答不了，请先确认日报已经生成。'
+  } finally {
+    askingDaily.value = false
+  }
+}
+async function load() { loading.value = true; error.value = ''; try { const url = viewingDate.value ? `/reports/${viewingDate.value}` : '/reports/latest'; const { data } = await api.get(url); report.value = data || emptyReport(); dailyAnswer.value = null } catch (err) { report.value = emptyReport(); error.value = viewingDate.value ? `未找到 ${formatDate(viewingDate.value)} 的日报。` : '日报加载失败，请稍后重试。' } finally { loading.value = false } }
 async function loadIntraday(refresh = false) {
   intradayLoading.value = true
   try {
@@ -675,6 +715,19 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .workbench-label { color:rgba(255,255,255,.76); font-size:13px; font-weight:900; }
 .workbench-main { position:relative; z-index:1; font-size:21px; font-weight:950; line-height:1.25; }
 .workbench-sub { position:relative; z-index:1; color:rgba(255,255,255,.86); line-height:1.55; font-size:13px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.ask-daily-card { margin:0 0 18px; padding:16px; border-radius:22px; background:#fff; border:1px solid #e8edf5; box-shadow:0 10px 26px rgba(15,23,42,.06); }
+.ask-head { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+.ask-head b { display:block; color:#0f172a; font-size:17px; font-weight:950; }
+.ask-head span { display:block; margin-top:4px; color:#64748b; font-size:13px; }
+.ask-input-row { margin-top:12px; }
+.ask-input-row input { width:100%; box-sizing:border-box; border:1px solid #dbe3ef; border-radius:14px; padding:12px 14px; font-size:14px; outline:none; }
+.ask-input-row input:focus { border-color:#8ea2ff; box-shadow:0 0 0 4px rgba(63,94,251,.10); }
+.ask-chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.ask-chips button { border:1px solid #dfe6ff; background:#f5f7ff; color:#3157d5; border-radius:999px; padding:7px 10px; font-size:12px; font-weight:900; cursor:pointer; }
+.ask-answer { margin-top:13px; padding:13px; border-radius:16px; background:#f8fafc; border:1px solid #edf2f7; }
+.ask-answer-title { color:#3157d5; font-size:13px; font-weight:950; }
+.ask-answer p { margin:6px 0 8px; color:#0f172a; font-weight:900; line-height:1.55; }
+.ask-answer ul { margin:0; padding-left:18px; color:#475569; line-height:1.65; }
 .risk-strip { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
 .risk-chip { background:#fff7e6; border:1px solid #ffd591; color:#8a5200; padding:9px 12px; border-radius:999px; font-weight:700; }
 .dashboard-toolbar { display:flex; justify-content:space-between; gap:14px; align-items:center; margin:18px 0 12px; padding:14px 16px; border:1px solid #e8edf5; border-radius:18px; background:rgba(255,255,255,.86); box-shadow:0 10px 26px rgba(15,23,42,.05); backdrop-filter:blur(10px); }
@@ -809,5 +862,5 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .empty-state.large { margin:18px 0; padding:48px; }
 .empty-state.small { padding:18px; }
 @media (max-width:1100px) { .daily-workbench { grid-template-columns:1fr 1fr; } .dashboard-masonry { column-count:2; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr 1fr; } }
-@media (max-width:760px) { .daily-workbench { grid-template-columns:1fr; } .dashboard-toolbar { flex-direction:column; align-items:stretch; } .dashboard-masonry { column-count:1; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr; } }
+@media (max-width:760px) { .daily-workbench { grid-template-columns:1fr; } .ask-head { flex-direction:column; align-items:stretch; } .dashboard-toolbar { flex-direction:column; align-items:stretch; } .dashboard-masonry { column-count:1; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr; } }
 </style>
