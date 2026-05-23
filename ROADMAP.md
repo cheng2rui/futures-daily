@@ -119,6 +119,11 @@
 - 新增 `GET /api/quality/retry-plan/{trade_date}`。
 - 数据诊断页新增“自动补采计划”，支持执行第一步或指定步骤，核心补采走 recollect，增强数据走 collect-quhe。
 
+### v0.3.9：自动执行补采计划 / Retry Runner
+- 新增 retry runner，可按 retry planner 顺序执行安全步骤，并为每步记录 before/after coverage diff。
+- 新增 `POST /api/quality/retry-plan/{trade_date}/run`，支持 max_steps、stop_on_failure、rebuild 参数。
+- 数据诊断页新增“执行计划”，一次最多自动跑前三步，并展示 job、失败数和聚合改善结果。
+
 ---
 
 

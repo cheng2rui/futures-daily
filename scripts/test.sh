@@ -16,6 +16,7 @@ python3 -m compileall app tests
 .venv/bin/python tests/test_source_diagnostics.py
 .venv/bin/python tests/test_source_health.py
 .venv/bin/python tests/test_retry_planner.py
+.venv/bin/python tests/test_retry_runner.py
 .venv/bin/python tests/test_notify.py
 .venv/bin/python tests/test_akshare_source.py
 .venv/bin/python tests/test_ask_daily.py

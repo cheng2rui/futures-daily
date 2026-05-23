@@ -61,7 +61,10 @@
           <b>{{ retryPlan.summary?.summary || '暂无补采建议' }}</b>
           <span>跳过 {{ retryPlan.summary?.skipped ?? 0 }} 项不可自动处理数据。</span>
         </div>
-        <button class="secondary" :disabled="loadingPlan || !retryPlanSteps.length" @click="runFirstRetryStep">{{ loadingPlan ? '执行中...' : '执行第一步' }}</button>
+        <div class="retry-actions">
+          <button class="secondary" :disabled="loadingPlan || !retryPlanSteps.length" @click="runFirstRetryStep">{{ loadingPlan ? '执行中...' : '执行第一步' }}</button>
+          <button class="primary small" :disabled="loadingPlan || !retryPlanSteps.length" @click="runRetryPlan">{{ loadingPlan ? '执行中...' : '执行计划' }}</button>
+        </div>
       </div>
       <div v-if="!retryPlanSteps.length" class="empty-state small success">当前没有建议自动补采的步骤。</div>
       <div v-else class="retry-list">
@@ -313,6 +316,39 @@ async function runFirstRetryStep() {
   if (step) await runRetryStep(step)
 }
 
+async function runRetryPlan() {
+  if (!tradeDate.value) return
+  loadingPlan.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    const { data } = await api.post(`/quality/retry-plan/${tradeDate.value}/run`, null, { params: { max_steps: 3, stop_on_failure: false, rebuild: true } })
+    notice.value = data?.summary || '自动补采计划执行完成'
+    const improved = (data?.executed || []).reduce((sum, item) => sum + Number(item.coverage_diff?.improved_cells || 0), 0)
+    const failed = (data?.executed || []).filter(item => item.status === 'failed').length
+    operationResult.value = {
+      summary: data?.summary || `执行 ${(data?.executed || []).length} 步，改善 ${improved} 项`,
+      message: `执行 ${(data?.executed || []).length} 步，失败 ${failed} 步`,
+      note: `job #${data?.job_id || '-'} · ${data?.job_status || '-'}`,
+      coverage_diff: aggregateRunnerDiff(data?.executed || []),
+    }
+    await load()
+  } catch (e) {
+    error.value = e?.response?.data?.detail || e?.message || '执行计划失败'
+  } finally {
+    loadingPlan.value = false
+  }
+}
+
+function aggregateRunnerDiff(items) {
+  const last = [...items].reverse().find(item => item.coverage_diff)?.coverage_diff || {}
+  return {
+    ...last,
+    improved_cells: items.reduce((sum, item) => sum + Number(item.coverage_diff?.improved_cells || 0), 0),
+    regressed_cells: items.reduce((sum, item) => sum + Number(item.coverage_diff?.regressed_cells || 0), 0),
+  }
+}
+
 async function runRetryStep(step) {
   if (!step) return
   if (step.type === 'recollect') return runRecollectInternal(step.exchange, step.kind)
@@ -375,6 +411,7 @@ onMounted(load)
 .head-actions { display:flex; gap:8px; align-items:center; }
 .head-actions input, .archive-toolbar select { border:1px solid #ddd; border-radius:10px; padding:10px 12px; background:#fff; }
 .primary { background:#e94560; color:white; border:0; border-radius:10px; padding:10px 16px; font-weight:800; cursor:pointer; }
+.primary.small { padding:8px 12px; }
 .secondary, .mini-action { background:#f1f5ff; color:#3157d5; border:1px solid #dbe3ff; border-radius:10px; padding:8px 12px; font-weight:800; cursor:pointer; }
 .primary:disabled, .secondary:disabled, .mini-action:disabled { opacity:.55; cursor:wait; }
 .notice { margin-bottom:16px; padding:11px 14px; border-radius:10px; }
@@ -422,6 +459,7 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .issue-meta { display:grid; gap:5px; color:#64748b; font-size:12px; }
 .action-list, .archive-toolbar, .replay-stats { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .retry-head { display:flex; justify-content:space-between; gap:12px; align-items:center; color:#334155; margin-bottom:12px; }
+.retry-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .retry-head b { display:block; color:#0f172a; }
 .retry-head span { display:block; margin-top:4px; color:#64748b; font-size:13px; }
 .retry-list { display:grid; gap:10px; }
