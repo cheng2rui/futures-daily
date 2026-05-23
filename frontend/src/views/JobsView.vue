@@ -17,6 +17,7 @@
             <option value="generate_report">生成日报</option>
             <option value="refresh_intraday">更新行情</option>
             <option value="recollect_report">补齐数据</option>
+            <option value="history_backfill">历史补采</option>
             <option value="push_report">日报推送</option>
           </select>
         </label>
@@ -73,6 +74,12 @@
                 <b>{{ channelLabel(x.channel) }}</b><span>{{ x.ok === true ? '成功' : x.skipped ? '跳过' : '失败' }}</span><small>{{ x.error || x.reason || x.body || '-' }}</small>
               </div>
             </div>
+            <div v-if="parsed(job)?.dates" class="exchange-results">
+              <div v-for="d in parsed(job).dates" :key="d" class="result-row ok">
+                <b>{{ d }}</b><span>历史补采</span><small>{{ backfillDayDetail(parsed(job), d) }}</small>
+              </div>
+            </div>
+            <div v-if="parsed(job)?.failed?.length" class="failure-line">补采异常：{{ parsed(job).failed.slice(0, 3).map(backfillFailureText).join('；') }}</div>
             <div v-if="pushDigestText(job)" class="digest-preview">
               <div class="digest-preview-head">推送文案：{{ parsed(job)?.digest_title || '日报摘要' }}</div>
               <pre>{{ pushDigestText(job) }}</pre>
@@ -120,13 +127,14 @@ function duration(j) {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 function statusTone(status) { return status === 'success' ? 'ok' : status === 'failed' ? 'bad' : status === 'running' ? 'running' : 'partial' }
-function jobLabel(name) { return ({ generate_report: '生成日报', refresh_intraday: '更新行情', recollect_report: '补齐数据', push_report: '日报推送' })[name] || name }
+function jobLabel(name) { return ({ generate_report: '生成日报', refresh_intraday: '更新行情', recollect_report: '补齐数据', history_backfill: '历史补采', push_report: '日报推送' })[name] || name }
 function parsed(j) { try { return JSON.parse(j.result_json || '{}') } catch { return null } }
 function detail(j) {
   const data = parsed(j)
   if (!data) return String(j.result_json || '-').slice(0, 80)
   if (data.summary) return data.summary
   if (data.dispatch) return data.dispatch.map(channelResult).join(' / ')
+  if (j.name === 'history_backfill') return `补采 ${data.days || data.dates?.length || 0} 个交易日${data.failed?.length ? `｜异常 ${data.failed.length} 项` : ''}`
   if (j.name === 'refresh_intraday') return `拿到行情 ${savedRows(data.collect)} 行${data.snapshot?.updated_at ? `｜更新时间 ${data.snapshot.updated_at}` : ''}`
   if (j.name === 'recollect_report' || data.exchange || data.kinds) return recollectDetail(data)
   if (data.collect || data.seats || data.quhe || data.news) return ['collect', 'seats', 'quhe', 'news'].filter(k => data[k]).join(' / ') || '-'
@@ -175,6 +183,14 @@ function normalizeError(value) {
   return text.slice(0, 120)
 }
 function channelLabel(channel) { return ({ telegram: 'Telegram', wecom: '企业微信', wechatbot: 'WeChatBot' })[channel] || channel || '-' }
+function backfillDayDetail(data, date) {
+  const row = (data?.results || []).find(x => x.trade_date === date) || {}
+  const daily = savedRows(row.daily)
+  const seats = row.seats ? savedRows(row.seats) : null
+  const enh = row.enhancements ? Object.keys(row.enhancements).length : 0
+  return `行情 ${daily} 行${seats == null ? '' : `｜席位 ${seats} 行`}｜增强源 ${enh} 类`
+}
+function backfillFailureText(x) { return `${x.trade_date || '-'} ${x.exchange || x.kind || ''}：${normalizeError(x.error || 'empty')}` }
 function pushDigestText(job) { const data = parsed(job); return data?.digest_brief || data?.digest_text || '' }
 function showRaw(job) { const data = parsed(job); return data && !data.collect && !data.seats && !data.dispatch }
 function prettyJson(raw) { try { return JSON.stringify(JSON.parse(raw || '{}'), null, 2) } catch { return raw || '' } }
