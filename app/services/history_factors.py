@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import DailyBar
+from app.models import BasisDaily, DailyBar, VarietyDailyFact, WarehouseReceiptDaily
 from app.services.structure import pct_change
 
 DEFAULT_WINDOWS = (20, 60, 120)
@@ -48,6 +48,14 @@ def build_history_context(db: Session, trade_date: str, windows: tuple[int, ...]
     a weak claim.
     """
     bars = list(db.scalars(select(DailyBar).where(DailyBar.trade_date <= trade_date).order_by(DailyBar.trade_date)))
+    basis_rows = list(db.scalars(select(BasisDaily).where(BasisDaily.trade_date <= trade_date).order_by(BasisDaily.trade_date)))
+    warehouse_rows = list(db.scalars(select(WarehouseReceiptDaily).where(WarehouseReceiptDaily.trade_date <= trade_date).order_by(WarehouseReceiptDaily.trade_date)))
+    fact_rows = list(db.scalars(select(VarietyDailyFact).where(VarietyDailyFact.trade_date <= trade_date).order_by(VarietyDailyFact.trade_date)))
+
+    basis_series = group_external_series(basis_rows, "basis_rate")
+    warehouse_series = group_external_series(warehouse_rows, "increase_number")
+    seat_series = group_fact_series(fact_rows, "archive_net_delta", fallback_field="seat_net_delta_top20")
+
     grouped: dict[tuple[str, str], dict[str, list[DailyBar]]] = {}
     for bar in bars:
         key = (str(bar.exchange or "").upper(), str(bar.symbol or "").upper())
@@ -72,6 +80,7 @@ def build_history_context(db: Session, trade_date: str, windows: tuple[int, ...]
                 metric("volume", "成交量", current.get("volume"), [x.get("volume") for x in sample], window),
                 metric("open_interest", "持仓量", current.get("open_interest"), [x.get("open_interest") for x in sample], window),
             ])
+            metrics.extend(external_metrics(symbol, trade_date, window, basis_series, warehouse_series, seat_series))
         valid = [m for m in metrics if m.get("status") == "ok" and m.get("percentile") is not None]
         highlights = sorted(valid, key=lambda x: abs(float(x.get("percentile") or 50) - 50), reverse=True)[:3]
         out[symbol] = {
@@ -97,6 +106,63 @@ def variety_daily_point(trade_date: str, bars: list[DailyBar]) -> dict[str, Any]
 
 def pick_main_contract(items: list[DailyBar]) -> DailyBar:
     return sorted(items, key=lambda x: ((x.volume or 0) * 0.65 + (x.open_interest or 0) * 0.35), reverse=True)[0]
+
+
+def group_external_series(rows: list[Any], field: str) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[tuple[str, str], Any] = {}
+    for row in rows:
+        symbol = str(getattr(row, "symbol", "") or "").upper()
+        date = str(getattr(row, "trade_date", "") or "")
+        if not symbol or not date:
+            continue
+        # Keep the first row per date/symbol. Upstream collectors already apply
+        # source-priority when building daily reports; historical factor only
+        # needs one stable value per day.
+        grouped.setdefault((symbol, date), row)
+    by_symbol: dict[str, list[dict[str, Any]]] = {}
+    for (symbol, date), row in grouped.items():
+        by_symbol.setdefault(symbol, []).append({"trade_date": date, "value": safe_float(getattr(row, field, None))})
+    for items in by_symbol.values():
+        items.sort(key=lambda x: x["trade_date"])
+    return by_symbol
+
+
+def group_fact_series(rows: list[VarietyDailyFact], field: str, fallback_field: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    by_symbol: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        symbol = str(row.symbol or "").upper()
+        value = safe_float(getattr(row, field, None))
+        if value is None and fallback_field:
+            value = safe_float(getattr(row, fallback_field, None))
+        by_symbol.setdefault(symbol, []).append({"trade_date": row.trade_date, "value": value})
+    for items in by_symbol.values():
+        items.sort(key=lambda x: x["trade_date"])
+    return by_symbol
+
+
+def external_metrics(
+    symbol: str,
+    trade_date: str,
+    window: int,
+    basis_series: dict[str, list[dict[str, Any]]],
+    warehouse_series: dict[str, list[dict[str, Any]]],
+    seat_series: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    return [
+        series_metric("basis_rate", "基差率", symbol, trade_date, window, basis_series),
+        series_metric("warehouse_delta", "仓单变化", symbol, trade_date, window, warehouse_series),
+        series_metric("seat_net_delta", "席位净变化", symbol, trade_date, window, seat_series),
+    ]
+
+
+def series_metric(key: str, label: str, symbol: str, trade_date: str, window: int, series_by_symbol: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    series = series_by_symbol.get(symbol, [])
+    idx = next((i for i, item in enumerate(series) if item.get("trade_date") == trade_date), -1)
+    if idx < 0:
+        return metric(key, label, None, [], window)
+    sample = series[max(0, idx - window + 1) : idx + 1]
+    current = sample[-1].get("value")
+    return metric(key, label, current, [x.get("value") for x in sample], window)
 
 
 def metric(key: str, label: str, current: Any, values: list[Any], window: int) -> dict[str, Any]:
