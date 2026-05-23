@@ -288,6 +288,7 @@
           <template v-else-if="card.id === 'quality'">
             <div class="quality-actions">
               <span>{{ qualityActionText }}</span>
+              <button class="mini-action" :disabled="historyBackfilling || loading" @click="backfillRecentHistory">{{ historyBackfilling ? '补采中...' : '补近5日历史' }}</button>
               <button class="mini-action" :disabled="loading || bulkRecollecting || !recoverableQualityRows.length" @click="recollectFailedOnly">{{ bulkRecollecting ? '补齐中...' : '只补缺失数据' }}</button>
             </div>
             <div class="quality-table">
@@ -338,6 +339,7 @@ const showPushPreview = ref(false)
 const quickQuestions = ['今天哪些品种最异常？', '我的自选品种怎么样？', '明天重点看什么？', '数据够不够用？', '席位有什么变化？']
 const recollecting = ref({})
 const bulkRecollecting = ref(false)
+const historyBackfilling = ref(false)
 const report = ref(emptyReport())
 const intraday = ref(emptyIntraday())
 const intradayLoading = ref(false)
@@ -695,6 +697,22 @@ async function recollectFailedOnly() {
     const reset = { ...recollecting.value }
     for (const row of rows) reset[row.exchange] = false
     recollecting.value = reset
+  }
+}
+async function backfillRecentHistory() {
+  const tradeDate = report.value.date || viewingDate.value
+  if (!tradeDate || historyBackfilling.value) return
+  error.value = ''
+  notice.value = ''
+  historyBackfilling.value = true
+  try {
+    const { data } = await api.post('/history/backfill', null, { params: { end_date: tradeDate, days: 5, seats: false, enhancements: true, rebuild_latest: true } })
+    await load()
+    notice.value = `已补采近 ${data?.days || 5} 个交易日历史，并重建当前日报。`
+  } catch (err) {
+    error.value = '历史补采失败，请到运行记录或服务日志查看原因。'
+  } finally {
+    historyBackfilling.value = false
   }
 }
 function runRecollect(x, rebuild) {
