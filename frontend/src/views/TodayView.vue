@@ -233,6 +233,34 @@
             </div>
           </template>
 
+          <template v-else-if="card.id === 'industryChain'">
+            <div class="positioning">{{ industryChain.summary || '把品种放回上下游链条，观察同链条共振、背离和异动扩散。' }}</div>
+            <div v-if="!industryChainItems.length" class="empty-state small">暂无足够产业链数据。</div>
+            <div v-else class="chain-grid dashboard-inner-grid">
+              <div v-for="item in visibleItems(industryChainItems, card, 4)" :key="item.id" class="chain-card" :class="`chain-${item.direction || 'unknown'}`">
+                <div class="chain-head">
+                  <div><b>{{ item.name }}</b><span>{{ item.count }} 个品种｜上涨 {{ item.up }} / 下跌 {{ item.down }}</span></div>
+                  <em>{{ chainDirectionLabel(item.direction) }}</em>
+                </div>
+                <div class="chain-summary">{{ item.summary }}</div>
+                <div class="chain-metrics">
+                  <span>均涨跌 {{ item.avg_change == null ? '-' : signedPct(item.avg_change) }}</span>
+                  <span>背离 {{ item.divergence_score || 0 }}</span>
+                  <span>异动 {{ item.abnormal_count || 0 }}</span>
+                </div>
+                <div v-if="item.leading_symbols?.length" class="chain-members">
+                  <span v-for="m in visibleItems(item.leading_symbols || [], card, 5)" :key="m.symbol" :class="toneClass(m.change_pct)">
+                    {{ m.role }} · {{ m.name || m.symbol }} {{ m.change_pct == null ? '-' : signedPct(m.change_pct) }}
+                  </span>
+                </div>
+                <div v-if="item.divergence_symbols?.length" class="chain-divergence">
+                  <b>背离品种：</b>
+                  <span v-for="m in visibleItems(item.divergence_symbols || [], card, 4)" :key="m.symbol">{{ m.name || m.symbol }} {{ signedPct(m.change_pct) }}</span>
+                </div>
+              </div>
+            </div>
+          </template>
+
           <template v-else-if="card.id === 'termStructure'">
             <div class="positioning">{{ termStructure.summary || '按同品种多合约曲线观察主力/次主力价差、近远月价差和期限结构。' }}</div>
             <div v-if="!termStructureItems.length" class="empty-state small">暂无足够合约曲线数据。</div>
@@ -378,6 +406,7 @@ const defaultDashboardCards = [
   { id: 'watchRows', title: '自选列表', mode: 'intraday' },
   { id: 'news', title: '相关资讯', mode: 'intraday' },
   { id: 'brief', title: '今天总结', size: 'wide', mode: 'review' },
+  { id: 'industryChain', title: '产业链联动', size: 'wide', mode: 'review' },
   { id: 'termStructure', title: '期限结构 / 月差', size: 'wide', mode: 'review' },
   { id: 'tomorrow', title: '明天重点看什么', mode: 'review' },
   { id: 'sectorVolume', title: '板块成交和持仓', size: 'chart', mode: 'review' },
@@ -484,6 +513,8 @@ const watchDigest = computed(() => report.value.intelligence?.watch_digest || {}
 const watchDigestItems = computed(() => watchDigest.value.items || [])
 const termStructure = computed(() => report.value.term_structure || report.value.intelligence?.term_structure || {})
 const termStructureItems = computed(() => termStructure.value.items || [])
+const industryChain = computed(() => report.value.industry_chain || report.value.intelligence?.industry_chain || {})
+const industryChainItems = computed(() => industryChain.value.items || [])
 
 const sectorVolumeOption = computed(() => barOption({ names: sectorBreadth.value.map(x => x.name), series: [
   { name: '成交量', data: sectorBreadth.value.map(x => Number(x.volume || 0)), color: '#3f5efb' },
@@ -542,7 +573,7 @@ function toggleDashboardCard(id) {
     : [...hiddenDashboardCards.value, id]
   saveDashboardLayout()
 }
-function isExpandableCard(id) { return ['brief', 'abnormal', 'watchDigest', 'news', 'tomorrow', 'quality', 'termStructure'].includes(id) }
+function isExpandableCard(id) { return ['brief', 'abnormal', 'watchDigest', 'news', 'tomorrow', 'quality', 'termStructure', 'industryChain'].includes(id) }
 function isCardExpanded(id) { return expandedDashboardCards.value.includes(id) }
 function toggleExpandCard(id) {
   expandedDashboardCards.value = isCardExpanded(id)
@@ -584,6 +615,7 @@ function barWidth(v) { return `${Math.min(100, Math.max(6, Math.abs(Number(v || 
 function barColor(v) { return Number(v || 0) >= 0 ? 'linear-gradient(90deg,#e94560,#ff9aa9)' : 'linear-gradient(90deg,#18b785,#5ee0b6)' }
 function biasLabel(v) { return ({ positive: '偏多', negative: '偏空', mixed: '分歧', neutral: '中性' })[v] || '中性' }
 function structureLabel(v) { return ({ contango: '升水结构', backwardation: '贴水结构', mixed: '混合结构', unknown: '结构不明' })[v] || '结构不明' }
+function chainDirectionLabel(v) { return ({ strong: '链条偏强', weak: '链条偏弱', divergent: '链条分化', unknown: '信号不足' })[v] || '信号不足' }
 function chartTextStyle() { return { color: '#64748b', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' } }
 function barOption({ names, series }) { return { color: series.map(x => x.color), tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: compactNumber }, legend: { top: 0, textStyle: chartTextStyle() }, grid: { top: 42, left: 48, right: 18, bottom: 34 }, xAxis: { type: 'category', data: names, axisLabel: { ...chartTextStyle(), interval: 0 }, axisTick: { show: false }, axisLine: { lineStyle: { color: '#e2e8f0' } } }, yAxis: { type: 'value', axisLabel: { ...chartTextStyle(), formatter: compactNumber }, splitLine: { lineStyle: { color: '#eef2f7' } } }, series: series.map(x => ({ name: x.name, type: 'bar', data: x.data, barMaxWidth: 18, itemStyle: { borderRadius: [7, 7, 0, 0] } })) } }
 function horizontalBarOption(items, color) { const rows = [...items].filter(x => Number.isFinite(x.value)).sort((a, b) => a.value - b.value); return { color: [color], tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: compactNumber }, grid: { top: 10, left: 92, right: 24, bottom: 24 }, xAxis: { type: 'value', axisLabel: { ...chartTextStyle(), formatter: compactNumber }, splitLine: { lineStyle: { color: '#eef2f7' } } }, yAxis: { type: 'category', data: rows.map(x => x.name), axisLabel: { ...chartTextStyle(), width: 86, overflow: 'truncate' }, axisTick: { show: false }, axisLine: { show: false } }, series: [{ type: 'bar', data: rows.map(x => x.value), barMaxWidth: 16, itemStyle: { borderRadius: [0, 8, 8, 0] } }] } }
@@ -893,6 +925,20 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .watch-digest-head em { color:#0f172a; background:#f1f5f9; border-radius:999px; padding:4px 8px; font-style:normal; font-weight:900; white-space:nowrap; }
 .watch-digest-signal { margin-top:10px; font-weight:900; line-height:1.55; }
 .watch-digest-card ul { margin:8px 0 0; padding-left:18px; color:#475569; line-height:1.55; font-size:13px; }
+.chain-card { border:1px solid #e8edf5; border-radius:16px; padding:13px; background:linear-gradient(180deg,#fff,#fbfdff); display:grid; gap:9px; }
+.chain-card.chain-strong { border-color:#ffd2d9; background:linear-gradient(180deg,#fff,#fff7f8); }
+.chain-card.chain-weak { border-color:#c8f1df; background:linear-gradient(180deg,#fff,#f3fff9); }
+.chain-card.chain-divergent { border-color:#fed7aa; background:linear-gradient(180deg,#fff,#fffaf0); }
+.chain-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+.chain-head b { display:block; color:#0f172a; font-size:16px; }
+.chain-head span { display:block; margin-top:4px; color:#94a3b8; font-size:12px; }
+.chain-head em { font-style:normal; color:#3157d5; background:#eef2ff; border:1px solid #dfe6ff; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:950; white-space:nowrap; }
+.chain-summary { color:#334155; font-weight:850; line-height:1.55; }
+.chain-metrics, .chain-members, .chain-divergence { display:flex; flex-wrap:wrap; gap:7px; }
+.chain-metrics span { color:#7c2d12; background:#fff7ed; border:1px solid #fed7aa; border-radius:999px; padding:5px 8px; font-size:12px; font-weight:850; }
+.chain-members span { background:#f8fafc; border:1px solid #e2e8f0; border-radius:999px; padding:5px 8px; font-size:12px; font-weight:900; }
+.chain-divergence { color:#8a5200; background:#fff7e6; border:1px solid #ffe4ad; border-radius:12px; padding:8px; font-size:12px; line-height:1.45; }
+.chain-divergence b { color:#8a5200; }
 .term-card { border:1px solid #e8edf5; border-radius:16px; padding:13px; background:#fff; display:grid; gap:9px; }
 .term-head { display:flex; justify-content:space-between; gap:10px; align-items:center; }
 .term-head b { color:#0f172a; font-size:16px; }

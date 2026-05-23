@@ -14,6 +14,7 @@ from app.services.data_mart import build_variety_dataset, materialize_variety_da
 from app.services.data_quality import build_data_quality
 from app.services.gap_analysis import build_gap_analysis
 from app.services.history_factors import build_history_context
+from app.services.industry_chain import build_industry_chain_digest
 from app.services.news_collector import load_latest_news_digest
 from app.services.push_digest import build_push_digest
 from app.services.seat_archive import load_archive_summary
@@ -122,6 +123,7 @@ def build_report(db: Session, trade_date: str) -> Report:
 
     news_digest = load_latest_news_digest(db, trade_date)
     abnormal_cards = build_abnormal_cards(dataset, news_digest=news_digest, history_context=history_context)
+    industry_chain = build_industry_chain_digest(dataset, abnormal_cards)
     watch_digest = build_watch_digest(dataset, watch_symbols, abnormal_cards, news_digest)
     tomorrow_watch = build_tomorrow_watch(abnormal_cards, data_quality, gap_analysis, news_digest)
     report_sections = build_report_sections(
@@ -165,6 +167,7 @@ def build_report(db: Session, trade_date: str) -> Report:
         },
         "structure": structure,
         "term_structure": term_structure,
+        "industry_chain": industry_chain,
         "seats": {
             "long_increase_top": [seat_item(r, "long") for r in seat_long],
             "short_increase_top": [seat_item(r, "short") for r in seat_short],
@@ -193,6 +196,7 @@ def build_report(db: Session, trade_date: str) -> Report:
                 "symbols": len(history_context),
             },
             "term_structure": term_structure,
+            "industry_chain": industry_chain,
         },
         "risk_flags": quality_flags(data_quality),
         "report_brief": report_brief,
