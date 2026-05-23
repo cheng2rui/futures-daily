@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
 import os
 from typing import Any, Callable
 
 import pandas as pd
 
+from app.sources.base import FetchResult, ProviderCapability
 from app.sources.dce_fallback_source import (
     fetch_dce_daily_from_sina,
     fetch_dce_seat_rank_from_sina,
@@ -43,14 +43,6 @@ def dce_direct_network():
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
-
-
-@dataclass(frozen=True)
-class FetchResult:
-    exchange: str
-    kind: str
-    rows: list[dict[str, Any]]
-    error: str | None = None
 
 
 def _variety_from_symbol(symbol: Any) -> str:
@@ -91,9 +83,17 @@ class AkShareSource:
     DCE website (get_dce_daily) returns HTTP 412 or empty results.
     """
 
+    name = "akshare"
+
     def __init__(self) -> None:
         import akshare as ak
         self.ak = ak
+
+    def capabilities(self) -> list[ProviderCapability]:
+        return [
+            ProviderCapability(kind="daily", exchanges=EXCHANGES, status="available", note="AkShare exchange daily endpoints with DCE Sina fallback."),
+            ProviderCapability(kind="seat_rank", exchanges=["DCE", "CZCE", "SHFE", "CFFEX", "GFEX"], status="partial", note="INE seat rank is not exposed by this adapter yet; DCE uses Sina fallback when official endpoint is empty."),
+        ]
 
     def fetch_daily(self, trade_date: str, exchange: str) -> FetchResult:
         exchange = exchange.upper()

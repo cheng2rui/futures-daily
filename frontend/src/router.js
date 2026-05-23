@@ -6,6 +6,7 @@ import SeatsView from './views/SeatsView.vue'
 import SettingsView from './views/SettingsView.vue'
 import JobsView from './views/JobsView.vue'
 import DatasetView from './views/DatasetView.vue'
+import EventsView from './views/EventsView.vue'
 
 const routes = [
   { path: '/', component: TodayView },
@@ -13,6 +14,7 @@ const routes = [
   { path: '/symbol/:code', component: SymbolView },
   { path: '/seats', component: SeatsView },
   { path: '/dataset', component: DatasetView },
+  { path: '/events', component: EventsView },
   { path: '/jobs', component: JobsView },
   { path: '/settings', component: SettingsView },
 ]

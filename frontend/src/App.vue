@@ -13,6 +13,7 @@
         <router-link to="/history">历史复盘</router-link>
         <router-link to="/seats">席位动向</router-link>
         <router-link to="/dataset">数据完整度</router-link>
+        <router-link to="/events">事件日历</router-link>
         <router-link to="/jobs">运行记录</router-link>
         <router-link to="/settings">设置</router-link>
       </nav>
@@ -31,7 +32,7 @@
 import { onMounted, ref } from 'vue'
 import api from './api.js'
 
-const appVersion = ref('0.2.9')
+const appVersion = ref('0.3.0')
 onMounted(async () => {
   try {
     const { data } = await api.get('/health')

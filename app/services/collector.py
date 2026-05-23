@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import CrawlerRun, DailyBar, DataGap, MarketSnapshot, SeatRankRow
 from app.services.normalizer import normalize_daily_row, normalize_seat_row
-from app.sources.akshare_source import AkShareSource
+from app.sources.registry import get_market_provider
 
 
 def _enabled_exchanges(exchanges: list[str] | tuple[str, ...] | None = None) -> list[str]:
@@ -22,7 +22,7 @@ def _enabled_exchanges(exchanges: list[str] | tuple[str, ...] | None = None) -> 
 
 def collect_daily_market(db: Session, trade_date: str | None = None, exchanges: list[str] | tuple[str, ...] | None = None) -> dict:
     trade_date = trade_date or date.today().strftime("%Y%m%d")
-    source = AkShareSource()
+    source = get_market_provider("akshare")
     results = []
     for exchange in _enabled_exchanges(exchanges):
         run = start_crawler_run(db, trade_date, exchange, "daily")
@@ -60,7 +60,7 @@ def collect_daily_market(db: Session, trade_date: str | None = None, exchanges: 
 
 def collect_seat_ranks(db: Session, trade_date: str | None = None, exchanges: list[str] | tuple[str, ...] | None = None) -> dict:
     trade_date = trade_date or date.today().strftime("%Y%m%d")
-    source = AkShareSource()
+    source = get_market_provider("akshare")
     results = []
     for exchange in _enabled_exchanges(exchanges):
         run = start_crawler_run(db, trade_date, exchange, "seat_rank")

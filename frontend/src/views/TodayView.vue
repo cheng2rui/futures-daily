@@ -70,6 +70,26 @@
         <pre v-if="showPushPreview" class="push-preview-text">{{ pushText }}</pre>
       </section>
 
+      <section v-if="report.event_calendar?.items?.length" class="event-calendar-strip">
+        <div class="event-calendar-head">
+          <div>
+            <b>事件日历</b>
+            <span>{{ report.event_calendar.summary?.positioning || '宏观、USDA、EIA、月末换月和手动导入事件统一展示。' }}</span>
+          </div>
+          <router-link class="secondary light mini-link" to="/events">查看完整日历</router-link>
+        </div>
+        <div class="event-calendar-grid">
+          <article v-for="item in (report.event_calendar.items || []).slice(0, 5)" :key="`${item.date}-${item.title}`" class="event-calendar-card" :class="`importance-${item.importance || 'normal'}`">
+            <div class="event-calendar-top">
+              <b>{{ item.title }}</b>
+              <em>{{ item.date }}</em>
+            </div>
+            <div class="event-calendar-meta">{{ item.category }} · {{ item.source }}</div>
+            <p>{{ item.summary }}</p>
+          </article>
+        </div>
+      </section>
+
       <div v-if="report.risk_flags?.length" class="risk-strip">
         <div v-for="flag in report.risk_flags" :key="flag" class="risk-chip">⚠ {{ flag }}</div>
       </div>

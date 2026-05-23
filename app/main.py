@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import assistant, dataset, history, jobs, markets, quality, reports, seat_archive, seats, settings, watch
+from app.api import assistant, dataset, events, history, jobs, markets, quality, reports, seat_archive, seats, settings, sources, watch
 from app.db import init_db
 from app.logging_config import setup_logging
 from app.services.scheduler import start_scheduler, stop_scheduler
@@ -66,6 +66,7 @@ async def request_logging(request: Request, call_next):
 
 app.include_router(assistant.router)
 app.include_router(dataset.router)
+app.include_router(events.router)
 app.include_router(history.router)
 app.include_router(jobs.router)
 app.include_router(reports.router)
@@ -74,6 +75,7 @@ app.include_router(seat_archive.router)
 app.include_router(quality.router)
 app.include_router(seats.router)
 app.include_router(settings.router)
+app.include_router(sources.router)
 app.include_router(watch.router)
 
 

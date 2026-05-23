@@ -12,6 +12,7 @@ from app.metadata.variety_meta import get_exchange_code, get_variety_name
 from app.models import DailyBar, Report, SeatRankRow, WatchSymbol, SeatWatchlist
 from app.services.data_mart import build_variety_dataset, materialize_variety_dataset
 from app.services.data_quality import build_data_quality
+from app.services.event_calendar import build_event_calendar
 from app.services.gap_analysis import build_gap_analysis
 from app.services.history_factors import build_history_context
 from app.services.industry_chain import build_industry_chain_digest
@@ -24,7 +25,7 @@ from app.services.term_structure import build_term_structure
 
 from app.version import VERSION
 
-REPORT_SCHEMA_VERSION = 5
+REPORT_SCHEMA_VERSION = 6
 LIQUID_MIN_VOLUME = 1000
 LIQUID_MIN_OPEN_INTEREST = 1000
 
@@ -105,6 +106,7 @@ def build_report(db: Session, trade_date: str) -> Report:
     data_quality = build_data_quality(db, trade_date)
     structure = build_structure(bars)
     term_structure = build_term_structure(bars)
+    event_calendar = build_event_calendar(trade_date)
     seat_archive = load_archive_summary(trade_date)
     dataset = build_variety_dataset(db, trade_date)
     materialize_variety_dataset(db, trade_date)
@@ -168,6 +170,7 @@ def build_report(db: Session, trade_date: str) -> Report:
         "structure": structure,
         "term_structure": term_structure,
         "industry_chain": industry_chain,
+        "event_calendar": event_calendar,
         "seats": {
             "long_increase_top": [seat_item(r, "long") for r in seat_long],
             "short_increase_top": [seat_item(r, "short") for r in seat_short],
@@ -197,6 +200,7 @@ def build_report(db: Session, trade_date: str) -> Report:
             },
             "term_structure": term_structure,
             "industry_chain": industry_chain,
+            "event_calendar": event_calendar,
         },
         "risk_flags": quality_flags(data_quality),
         "report_brief": report_brief,
