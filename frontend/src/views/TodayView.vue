@@ -59,6 +59,17 @@
         </div>
       </section>
 
+      <section v-if="pushText" class="push-preview-card">
+        <div class="push-preview-head">
+          <div>
+            <b>推送预览</b>
+            <span>{{ pushDigestTitle }} · 发送前先确认最终文案，复制和推送按钮在顶部。</span>
+          </div>
+          <button class="secondary light" @click="showPushPreview = !showPushPreview">{{ showPushPreview ? '收起预览' : '展开预览' }}</button>
+        </div>
+        <pre v-if="showPushPreview" class="push-preview-text">{{ pushText }}</pre>
+      </section>
+
       <div v-if="report.risk_flags?.length" class="risk-strip">
         <div v-for="flag in report.risk_flags" :key="flag" class="risk-chip">⚠ {{ flag }}</div>
       </div>
@@ -317,6 +328,7 @@ const notice = ref('')
 const dailyQuestion = ref('')
 const dailyAnswer = ref(null)
 const askingDaily = ref(false)
+const showPushPreview = ref(false)
 const quickQuestions = ['今天哪些品种最异常？', '我的自选品种怎么样？', '明天重点看什么？', '数据够不够用？', '席位有什么变化？']
 const recollecting = ref({})
 const bulkRecollecting = ref(false)
@@ -363,6 +375,7 @@ const generateButtonText = computed(() => {
   return viewingDate.value ? '重新获取并生成' : '生成日报'
 })
 const pushText = computed(() => report.value.push_digest?.brief || report.value.push_digest?.text || '')
+const pushDigestTitle = computed(() => report.value.push_digest?.title || `期货日报 ${displayDate.value}`)
 const copyButtonText = computed(() => copied.value ? '已复制' : '复制推送文案')
 const pushButtonText = computed(() => pushing.value ? '推送中...' : '推送日报')
 const topFocus = computed(() => abnormalCards.value[0] || watchDigestItems.value[0] || null)
@@ -731,6 +744,11 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .ask-answer-title { color:#3157d5; font-size:13px; font-weight:950; }
 .ask-answer p { margin:6px 0 8px; color:#0f172a; font-weight:900; line-height:1.55; }
 .ask-answer ul { margin:0; padding-left:18px; color:#475569; line-height:1.65; }
+.push-preview-card { margin:0 0 18px; padding:16px; border-radius:22px; background:linear-gradient(180deg,#ffffff,#f8fbff); border:1px solid #dfe6ff; box-shadow:0 10px 26px rgba(15,23,42,.06); }
+.push-preview-head { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+.push-preview-head b { display:block; color:#0f172a; font-size:17px; font-weight:950; }
+.push-preview-head span { display:block; margin-top:4px; color:#64748b; font-size:13px; line-height:1.45; }
+.push-preview-text { margin:14px 0 0; max-height:420px; overflow:auto; white-space:pre-wrap; word-break:break-word; border-radius:16px; background:#0f172a; color:#dbeafe; padding:14px; font-size:13px; line-height:1.7; }
 .risk-strip { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
 .risk-chip { background:#fff7e6; border:1px solid #ffd591; color:#8a5200; padding:9px 12px; border-radius:999px; font-weight:700; }
 .dashboard-toolbar { display:flex; justify-content:space-between; gap:14px; align-items:center; margin:18px 0 12px; padding:14px 16px; border:1px solid #e8edf5; border-radius:18px; background:rgba(255,255,255,.86); box-shadow:0 10px 26px rgba(15,23,42,.05); backdrop-filter:blur(10px); }
