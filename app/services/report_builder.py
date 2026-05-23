@@ -13,6 +13,7 @@ from app.models import DailyBar, Report, SeatRankRow, WatchSymbol, SeatWatchlist
 from app.services.data_mart import build_variety_dataset, materialize_variety_dataset
 from app.services.data_quality import build_data_quality
 from app.services.gap_analysis import build_gap_analysis
+from app.services.history_factors import build_history_context
 from app.services.news_collector import load_latest_news_digest
 from app.services.push_digest import build_push_digest
 from app.services.seat_archive import load_archive_summary
@@ -105,6 +106,7 @@ def build_report(db: Session, trade_date: str) -> Report:
     dataset = build_variety_dataset(db, trade_date)
     materialize_variety_dataset(db, trade_date)
     gap_analysis = build_gap_analysis(db, trade_date)
+    history_context = build_history_context(db, trade_date)
     watch_symbols = list(db.scalars(select(WatchSymbol).where(WatchSymbol.enabled == True)))  # noqa: E712
     watch_symbol_codes = {w.symbol.upper() for w in watch_symbols}
     watch_bars = [bar_item(b, pct_change(b)) for b in bars if b.symbol.upper() in watch_symbol_codes]
@@ -117,7 +119,7 @@ def build_report(db: Session, trade_date: str) -> Report:
     ][:50]
 
     news_digest = load_latest_news_digest(db, trade_date)
-    abnormal_cards = build_abnormal_cards(dataset, news_digest=news_digest)
+    abnormal_cards = build_abnormal_cards(dataset, news_digest=news_digest, history_context=history_context)
     watch_digest = build_watch_digest(dataset, watch_symbols, abnormal_cards, news_digest)
     tomorrow_watch = build_tomorrow_watch(abnormal_cards, data_quality, gap_analysis, news_digest)
     report_sections = build_report_sections(
@@ -183,6 +185,10 @@ def build_report(db: Session, trade_date: str) -> Report:
             "tomorrow_watch": tomorrow_watch,
             "news_digest": news_digest,
             "watch_digest": watch_digest,
+            "history_context": {
+                "status": "ok" if any(x.get("status") == "ok" for x in history_context.values()) else "insufficient_history",
+                "symbols": len(history_context),
+            },
         },
         "risk_flags": quality_flags(data_quality),
         "report_brief": report_brief,
@@ -282,7 +288,7 @@ def build_report_sections(
 
 
 
-def build_abnormal_cards(dataset: dict, limit: int = 12, news_digest: dict | None = None) -> list[dict]:
+def build_abnormal_cards(dataset: dict, limit: int = 12, news_digest: dict | None = None, history_context: dict | None = None) -> list[dict]:
     """Build explainable variety-level abnormal cards for the daily intelligence view.
 
     The card is a reading priority, not a trading signal. It rewards facts that
@@ -310,9 +316,11 @@ def build_abnormal_cards(dataset: dict, limit: int = 12, news_digest: dict | Non
         capital_yi = safe_num(capital.get("amount_yi"))
 
         symbol = str(row.get("symbol") or "").upper()
+        symbol_history = (history_context or {}).get(symbol) or {}
         related_news = news_by_symbol.get(symbol, [])[:3]
         viewpoint = viewpoints_by_symbol.get(symbol)
         dimensions = score_dimensions(chg, volume, oi, net_delta, long_short_ratio, warehouse_delta, warehouse_ratio, basis_rate, capital_yi, len(related_news))
+        dimensions = merge_history_dimensions(dimensions, symbol_history)
         score = sum(x["score"] for x in dimensions)
         if score <= 0:
             continue
@@ -349,6 +357,7 @@ def build_abnormal_cards(dataset: dict, limit: int = 12, news_digest: dict | Non
             "watch_next": watch_next,
             "related_news": related_news,
             "news_viewpoint": viewpoint,
+            "history_context": symbol_history,
             "source_quality": row.get("quality") or {},
         })
     cards.sort(key=lambda x: x["score"], reverse=True)
@@ -373,6 +382,26 @@ def score_dimensions(chg, volume, oi, net_delta, long_short_ratio, warehouse_del
     add("资讯热度", news_count, min((news_count or 0) * 2.5, 8), "相关新闻越多，越需要结合事件解释")
     dims.sort(key=lambda x: x["score"], reverse=True)
     return dims[:5]
+
+
+def merge_history_dimensions(dimensions: list[dict], history_context: dict | None) -> list[dict]:
+    highlights = (history_context or {}).get("highlights") or []
+    dims = list(dimensions)
+    for item in highlights[:2]:
+        percentile = safe_num(item.get("percentile"))
+        if percentile is None:
+            continue
+        extremity = abs(percentile - 50) / 50
+        if extremity < 0.7:
+            continue
+        dims.append({
+            "name": f"历史{item.get('label')}",
+            "value": percentile,
+            "score": round(min(4 + extremity * 6, 10), 2),
+            "note": item.get("note") or f"近 {item.get('window')} 日分位 {percentile}%",
+        })
+    dims.sort(key=lambda x: x["score"], reverse=True)
+    return dims[:6]
 
 
 def classify_abnormal_signal(chg, net_delta, warehouse_delta, basis_rate) -> tuple[str, str]:

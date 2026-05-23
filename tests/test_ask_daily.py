@@ -13,6 +13,7 @@ REPORT = {
                 "name": "PTA",
                 "signal": "放量下跌，偏弱",
                 "evidence_chain": [{"label": "价格", "text": "主力跌 2%"}],
+                "history_context": {"status": "ok", "highlights": [{"label": "涨跌幅", "window": 60, "percentile": 8.0}], "summary": "涨跌幅近60日低位8%"},
                 "watch_next": "看是否继续增仓下跌",
             }
         ],
@@ -41,6 +42,10 @@ def check() -> None:
 
     seats = answer_daily_question(REPORT, "席位有什么变化？")
     assert seats["bullets"]
+
+    history = answer_daily_question(REPORT, "这个异动历史上极端吗？")
+    assert history["title"] == "这些异动历史上极端吗？"
+    assert "分位" in history["bullets"][0]
 
 
 if __name__ == "__main__":

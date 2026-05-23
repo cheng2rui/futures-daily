@@ -63,6 +63,8 @@ def answer_daily_question(report: dict[str, Any], question: str) -> dict[str, An
     if not q:
         q_lower = "summary"
 
+    if any(word in q_lower for word in ["历史", "极端", "分位", "罕见", "异常度", "percentile"]):
+        return _history_answer(report, q)
     if any(word in q_lower for word in ["自选", "关注", "watch"]):
         return _watch_answer(report, q)
     if any(word in q_lower for word in ["明天", "观察", "next", "tomorrow"]):
@@ -98,12 +100,32 @@ def _abnormal_answer(report: dict[str, Any], question: str) -> dict[str, Any]:
         evidence = item.get("evidence_chain") or []
         ev_text = "；".join(str(x.get("text") or "") for x in evidence[:2] if x.get("text"))
         line = _name_signal(item)
+        hist = _history_summary(item)
+        if hist:
+            line += f"｜历史位置：{hist}"
         if ev_text:
             line += f"｜证据：{ev_text}"
         if item.get("watch_next"):
             line += f"｜明天看：{item.get('watch_next')}"
         bullets.append(line)
     return _answer("今天哪些品种最值得关注？", f"优先看 {items[0].get('name') or items[0].get('symbol')}。", bullets, question)
+
+
+def _history_answer(report: dict[str, Any], question: str) -> dict[str, Any]:
+    items = _top_abnormal(report, limit=6)
+    bullets = []
+    for item in items:
+        hist = item.get("history_context") or {}
+        name = item.get("name") or item.get("symbol") or "品种"
+        if hist.get("status") != "ok":
+            bullets.append(f"{name}：本地历史样本不足，暂不判断极端程度。")
+            continue
+        highlights = hist.get("highlights") or []
+        text = "；".join(f"{x.get('label')}近{x.get('window')}日分位{x.get('percentile')}%" for x in highlights[:3])
+        bullets.append(f"{name}：{text or hist.get('summary') or '历史位置暂不突出'}")
+    if not bullets:
+        bullets = ["当前日报还没有历史分位数据，建议先积累或补采更多历史行情。"]
+    return _answer("这些异动历史上极端吗？", bullets[0], bullets, question)
 
 
 def _watch_answer(report: dict[str, Any], question: str) -> dict[str, Any]:
@@ -194,6 +216,16 @@ def _change_text(item: dict[str, Any]) -> str:
     if close is not None:
         parts.append(f"收盘 {close}")
     return "，".join(parts) or "暂无明显结论"
+
+
+def _history_summary(item: dict[str, Any]) -> str:
+    hist = item.get("history_context") or {}
+    if hist.get("status") != "ok":
+        return ""
+    highlights = hist.get("highlights") or []
+    if not highlights:
+        return hist.get("summary") or ""
+    return "；".join(f"{x.get('label')}近{x.get('window')}日分位{x.get('percentile')}%" for x in highlights[:2])
 
 
 def _answer(title: str, headline: str, bullets: list[str], question: str) -> dict[str, Any]:
