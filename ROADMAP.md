@@ -109,6 +109,11 @@
 - `/api/reports/{trade_date}/recollect` 返回 `coverage_diff`，JobRun 也记录 before/after coverage matrix。
 - raw archive replay 增加解析成功率，数据诊断页展示最近一次补采或 replay 的影响摘要。
 
+### v0.3.7：数据源健康评分
+- 新增 source health 服务，按源统计最近运行、归档数量、开放缺口、成功率和健康评分。
+- 前端“数据诊断”页新增数据源健康卡片，能直接看到 akshare / quheqihuo / fallback 的健康状态。
+- 健康评分优先解释问题来源，不做黑盒分数。
+
 ---
 
 

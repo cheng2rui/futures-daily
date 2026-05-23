@@ -29,10 +29,33 @@
       <KpiCard label="核心覆盖" :value="`${coverageSummary.core_coverage_pct ?? 0}%`" color="#3f5efb" />
       <KpiCard label="综合覆盖" :value="`${coverageSummary.overall_coverage_pct ?? 0}%`" color="#16c79a" />
       <KpiCard label="部分交易所" :value="coverageSummary.partial_exchanges || 0" color="#f5a623" />
-      <KpiCard label="失败交易所" :value="coverageSummary.failed_exchanges || 0" color="#e94560" />
+      <KpiCard label="源健康均分" :value="sourceHealthSummary.average_score ?? 0" :color="sourceHealthColor" />
     </div>
 
-    <SectionCard title="覆盖矩阵">
+    <SectionCard title="数据源健康">
+      <div class="source-health-head">
+        <b>{{ sourceHealthSummary.summary || '暂无来源健康数据' }}</b>
+        <span>Top: {{ (sourceHealthSummary.top_sources || []).join(' / ') || '-' }}</span>
+      </div>
+      <div class="source-grid">
+        <article v-for="src in sourceHealthRows" :key="src.source" class="source-card" :class="`source-${src.status}`">
+          <div class="source-top">
+            <b>{{ src.source }}</b>
+            <em>{{ src.score }}</em>
+          </div>
+          <p>{{ src.summary }}</p>
+          <div class="source-metrics">
+            <span>成功率 {{ src.success_rate }}%</span>
+            <span>运行 {{ src.runs_success }}/{{ src.runs_total }}</span>
+            <span>归档 {{ src.archives_count }}</span>
+            <span>缺口 {{ src.open_gaps }}</span>
+          </div>
+          <div v-if="src.latest_error" class="source-error">{{ src.latest_error }}</div>
+        </article>
+      </div>
+    </SectionCard>
+
+    <SectionCard title="覆盖矩阵" style="margin-top:16px">
       <div class="matrix-table">
         <table>
           <thead><tr><th>交易所</th><th v-for="kind in coverageKinds" :key="kind.key">{{ kind.label }}</th><th>结论</th></tr></thead>
@@ -150,6 +173,7 @@ const loadingArchives = ref(false)
 const tradeDate = ref('')
 const tradeDateInput = ref('')
 const coverage = ref({ rows: [], kinds: [], summary: {} })
+const sourceHealth = ref({ sources: [], summary: {} })
 const diagnosticData = ref({ exchanges: [] })
 const archives = ref([])
 const archiveExchange = ref('')
@@ -164,6 +188,9 @@ const error = ref('')
 const coverageRows = computed(() => coverage.value.rows || [])
 const coverageKinds = computed(() => coverage.value.kinds || [])
 const coverageSummary = computed(() => coverage.value.summary || {})
+const sourceHealthRows = computed(() => sourceHealth.value.sources || [])
+const sourceHealthSummary = computed(() => sourceHealth.value.summary || {})
+const sourceHealthColor = computed(() => sourceHealthSummary.value.status === 'good' ? '#16c79a' : sourceHealthSummary.value.status === 'warn' ? '#f5a623' : '#e94560')
 const diagnostics = computed(() => diagnosticData.value.exchanges || [])
 
 function cell(row, kind) { return row?.cells?.[kind] || { status: 'missing', rows: 0, message: '未采集' } }
@@ -190,11 +217,13 @@ async function load() {
     if (!date) throw new Error('暂无可诊断日期')
     tradeDate.value = date
     tradeDateInput.value = date
-    const [coverageResp, diagResp] = await Promise.all([
+    const [coverageResp, healthResp, diagResp] = await Promise.all([
       api.get(`/quality/coverage/${date}`),
+      api.get(`/quality/source-health/${date}`),
       api.get(`/quality/diagnostics/${date}`),
     ])
     coverage.value = coverageResp.data || { rows: [], kinds: [], summary: {} }
+    sourceHealth.value = healthResp.data || { sources: [], summary: {} }
     diagnosticData.value = diagResp.data || { exchanges: [] }
     await loadArchives()
   } catch (e) {
@@ -279,6 +308,20 @@ onMounted(load)
 .op-tail { margin-top:10px; color:#64748b; font-size:13px; }
 .replay-stats em { font-style:normal; color:#64748b; }
 .kpi-row { display:grid; grid-template-columns: repeat(4, 1fr); gap:16px; margin-bottom:16px; }
+.source-health-head { display:flex; justify-content:space-between; gap:12px; align-items:center; color:#334155; margin-bottom:12px; }
+.source-health-head span { color:#64748b; font-size:13px; }
+.source-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.source-card { border:1px solid #e8edf5; border-radius:14px; padding:13px; background:#fff; display:grid; gap:9px; }
+.source-good { border-color:#bbf7d0; background:#f7fffb; }
+.source-warn { border-color:#fed7aa; background:#fffaf0; }
+.source-bad { border-color:#fecdd3; background:#fff8f9; }
+.source-top { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+.source-top b { color:#0f172a; }
+.source-top em { font-style:normal; font-weight:950; color:#3157d5; background:#eef2ff; border:1px solid #dbe3ff; border-radius:999px; padding:4px 8px; }
+.source-card p { margin:0; color:#475569; line-height:1.45; font-size:13px; }
+.source-metrics { display:flex; flex-wrap:wrap; gap:6px; }
+.source-metrics span { background:#f8fafc; color:#64748b; border:1px solid #e2e8f0; border-radius:999px; padding:4px 7px; font-size:12px; font-weight:850; }
+.source-error { color:#be123c; background:#fff1f2; border:1px solid #fecdd3; border-radius:10px; padding:7px 9px; font-size:12px; line-height:1.4; }
 .matrix-table, .archive-table { width:100%; overflow:auto; }
 table { width:100%; min-width:860px; border-collapse:separate; border-spacing:0; font-size:13px; }
 th { background:#f8fafc; color:#475569; text-align:left; padding:11px 12px; border-bottom:1px solid #e2e8f0; white-space:nowrap; }
@@ -308,5 +351,5 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .replay-head { display:flex; justify-content:space-between; gap:12px; color:#334155; }
 .replay-stats span { background:#eef2ff; color:#3157d5; border:1px solid #dbe3ff; border-radius:999px; padding:5px 9px; font-weight:900; font-size:12px; }
 pre { margin-top:12px; max-height:360px; overflow:auto; background:#0f172a; color:#dbeafe; border-radius:12px; padding:12px; font-size:12px; }
-@media (max-width: 980px) { .kpi-row, .exchange-grid { grid-template-columns:1fr; } .page-head, .head-actions { flex-direction:column; align-items:stretch; } }
+@media (max-width: 980px) { .kpi-row, .exchange-grid, .source-grid { grid-template-columns:1fr; } .page-head, .head-actions, .source-health-head { flex-direction:column; align-items:stretch; } }
 </style>
