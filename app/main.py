@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import logging
+import os
+import subprocess
 import time
 
 from fastapi import FastAPI, Request
@@ -15,6 +17,25 @@ from app.logging_config import setup_logging
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 from app.version import VERSION
+
+
+def _detect_git_commit() -> str | None:
+    env_commit = os.getenv("FUTURES_DAILY_COMMIT") or os.getenv("GIT_COMMIT")
+    if env_commit:
+        return env_commit[:12]
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short=12", "HEAD"],
+            cwd=Path(__file__).resolve().parent.parent,
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=1,
+        ).strip() or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+GIT_COMMIT = _detect_git_commit()
 
 setup_logging()
 logger = logging.getLogger("futures_daily")
@@ -70,7 +91,10 @@ def on_shutdown() -> None:
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": VERSION}
+    payload = {"status": "ok", "version": VERSION}
+    if GIT_COMMIT:
+        payload["commit"] = GIT_COMMIT
+    return payload
 
 
 WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"

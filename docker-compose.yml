@@ -1,7 +1,10 @@
 services:
   futures-daily:
     image: futures-daily:latest
-    build: .
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     container_name: futures-daily
     ports:
       - "8500:8500"

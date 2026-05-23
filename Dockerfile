@@ -6,10 +6,12 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM python:3.12-slim AS runtime
+ARG GIT_COMMIT=unknown
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     FUTURES_DAILY_CONFIG=/app/config/config.yaml \
-    FUTURES_DAILY_DB=/app/data/futures_daily.db
+    FUTURES_DAILY_DB=/app/data/futures_daily.db \
+    FUTURES_DAILY_COMMIT=${GIT_COMMIT}
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt

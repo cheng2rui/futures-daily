@@ -31,7 +31,7 @@
 import { onMounted, ref } from 'vue'
 import api from './api.js'
 
-const appVersion = ref('0.1.9')
+const appVersion = ref('0.2.0')
 onMounted(async () => {
   try {
     const { data } = await api.get('/health')
