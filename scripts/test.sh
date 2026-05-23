@@ -16,4 +16,5 @@ python3 -m compileall app tests
 .venv/bin/python tests/test_push_digest.py
 .venv/bin/python tests/test_history_factors.py
 .venv/bin/python tests/test_history_backfill.py
+.venv/bin/python tests/test_term_structure.py
 npm run build --prefix frontend

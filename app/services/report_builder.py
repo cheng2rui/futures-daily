@@ -18,6 +18,7 @@ from app.services.news_collector import load_latest_news_digest
 from app.services.push_digest import build_push_digest
 from app.services.seat_archive import load_archive_summary
 from app.services.structure import build_structure, pct_change, sector_for
+from app.services.term_structure import build_term_structure
 
 
 from app.version import VERSION
@@ -102,6 +103,7 @@ def build_report(db: Session, trade_date: str) -> Report:
 
     data_quality = build_data_quality(db, trade_date)
     structure = build_structure(bars)
+    term_structure = build_term_structure(bars)
     seat_archive = load_archive_summary(trade_date)
     dataset = build_variety_dataset(db, trade_date)
     materialize_variety_dataset(db, trade_date)
@@ -162,6 +164,7 @@ def build_report(db: Session, trade_date: str) -> Report:
             "open_interest": [bar_item(b) for b in oi_top],
         },
         "structure": structure,
+        "term_structure": term_structure,
         "seats": {
             "long_increase_top": [seat_item(r, "long") for r in seat_long],
             "short_increase_top": [seat_item(r, "short") for r in seat_short],
@@ -189,6 +192,7 @@ def build_report(db: Session, trade_date: str) -> Report:
                 "status": "ok" if any(x.get("status") == "ok" for x in history_context.values()) else "insufficient_history",
                 "symbols": len(history_context),
             },
+            "term_structure": term_structure,
         },
         "risk_flags": quality_flags(data_quality),
         "report_brief": report_brief,
