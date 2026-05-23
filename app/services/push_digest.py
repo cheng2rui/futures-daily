@@ -66,7 +66,15 @@ def build_push_digest(report: dict[str, Any], max_abnormal: int = 5, max_watch: 
     if tomorrow:
         for item in tomorrow[:5]:
             prefix = "!" if item.get("priority") == "high" else "-"
-            lines.append(f"{prefix} {item.get('title')}：{shorten(item.get('body'), 70)}")
+            category = item.get("category") or "观察"
+            title = item.get("title") or item.get("name") or item.get("symbol") or "后续验证"
+            body = shorten(item.get("body"), 70)
+            lines.append(f"{prefix} {category}｜{title}：{body}")
+            evidence = [str(x).strip() for x in (item.get("evidence") or []) if str(x).strip()]
+            if evidence:
+                lines.append(f"  证据：{shorten('；'.join(evidence[:3]), 86)}")
+            if item.get("impact"):
+                lines.append(f"  影响：{shorten(item.get('impact'), 86)}")
     else:
         lines.append("- 暂无观察项")
 

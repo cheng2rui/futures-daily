@@ -13,4 +13,5 @@ python3 -m compileall app tests
 .venv/bin/python tests/test_akshare_source.py
 .venv/bin/python tests/test_ask_daily.py
 .venv/bin/python tests/test_tomorrow_watch.py
+.venv/bin/python tests/test_push_digest.py
 npm run build --prefix frontend
