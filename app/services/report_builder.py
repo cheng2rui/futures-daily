@@ -11,6 +11,7 @@ from app.metadata.contract_specs import get_point_value
 from app.metadata.variety_meta import get_exchange_code, get_variety_name
 from app.models import DailyBar, Report, SeatRankRow, WatchSymbol, SeatWatchlist
 from app.services.data_mart import build_variety_dataset, materialize_variety_dataset
+from app.services.coverage_matrix import build_coverage_matrix
 from app.services.data_quality import build_data_quality
 from app.services.event_calendar import build_event_calendar
 from app.services.gap_analysis import build_gap_analysis
@@ -110,6 +111,8 @@ def build_report(db: Session, trade_date: str) -> Report:
     seat_archive = load_archive_summary(trade_date)
     dataset = build_variety_dataset(db, trade_date)
     materialize_variety_dataset(db, trade_date)
+    coverage_matrix = build_coverage_matrix(db, trade_date, sync_gaps=True)
+    data_quality["coverage_matrix"] = coverage_matrix
     gap_analysis = build_gap_analysis(db, trade_date)
     history_context = build_history_context(db, trade_date)
     watch_symbols = list(db.scalars(select(WatchSymbol).where(WatchSymbol.enabled == True)))  # noqa: E712
@@ -179,6 +182,7 @@ def build_report(db: Session, trade_date: str) -> Report:
         },
         "watch_symbols": watch_bars,
         "data_quality": data_quality,
+        "coverage_matrix": coverage_matrix,
         "dataset": {
             "count": dataset.get("count", 0),
             "summary": dataset.get("summary", {}),

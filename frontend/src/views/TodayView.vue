@@ -357,6 +357,28 @@
               <button class="mini-action" :disabled="historyBackfilling || loading" @click="backfillRecentHistory">{{ historyBackfilling ? '补采中...' : '补近5日历史' }}</button>
               <button class="mini-action" :disabled="loading || bulkRecollecting || !recoverableQualityRows.length" @click="recollectFailedOnly">{{ bulkRecollecting ? '补齐中...' : '只补缺失数据' }}</button>
             </div>
+            <div v-if="coverageMatrixRows.length" class="coverage-matrix">
+              <div class="coverage-matrix-head">
+                <b>6 所覆盖矩阵</b>
+                <span>核心覆盖 {{ coverageMatrixSummary.core_coverage_pct ?? '-' }}%｜综合覆盖 {{ coverageMatrixSummary.overall_coverage_pct ?? '-' }}%</span>
+              </div>
+              <div class="coverage-matrix-scroll">
+                <table>
+                  <thead><tr><th>交易所</th><th v-for="kind in coverageMatrixKinds" :key="kind.key">{{ kind.label }}</th><th>结论</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in coverageMatrixRows" :key="row.exchange">
+                      <td>{{ exchangeName(row.exchange) }}</td>
+                      <td v-for="kind in coverageMatrixKinds" :key="`${row.exchange}-${kind.key}`">
+                        <span class="coverage-cell" :class="`coverage-${coverageCell(row, kind.key).status}`" :title="coverageCell(row, kind.key).message">
+                          {{ coverageCellLabel(coverageCell(row, kind.key)) }}
+                        </span>
+                      </td>
+                      <td class="quality-note">{{ row.summary || '-' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
             <div class="quality-table">
               <table>
                 <thead><tr><th>交易所</th><th>状态</th><th>行情</th><th>席位</th><th>备用数据</th><th>说明</th><th>操作</th></tr></thead>
@@ -490,6 +512,10 @@ const gainerRows = computed(() => rows(activeDashboardMode.value === 'intraday' 
 const loserRows = computed(() => rows(activeDashboardMode.value === 'intraday' ? intraday.value.rankings?.losers : report.value.rankings?.losers))
 const seatSignalCards = computed(() => (report.value.seats?.archive?.net_delta_top || []).slice(0, 6).map(x => ({ exchange: exchangeName(x.exchange), name: x.displayName || x.name, netDelta: x.netDelta, longShortRatio: x.longShortRatio, netDir: x.netDir })))
 const qualityExchangeRows = computed(() => report.value.data_quality?.exchanges || [])
+const coverageMatrix = computed(() => report.value.coverage_matrix || report.value.data_quality?.coverage_matrix || {})
+const coverageMatrixKinds = computed(() => coverageMatrix.value.kinds || [])
+const coverageMatrixRows = computed(() => coverageMatrix.value.rows || [])
+const coverageMatrixSummary = computed(() => coverageMatrix.value.summary || {})
 const recoverableQualityRows = computed(() => qualityExchangeRows.value.filter(isRecoverableQualityRow))
 const unrecoverableQualityRows = computed(() => qualityExchangeRows.value.filter(x => x.unrecoverable_kinds?.length))
 const qualityActionText = computed(() => {
@@ -629,6 +655,13 @@ function recollectKinds(x) { const kinds = []; if (x.unrecoverable_kinds?.includ
 function recollectButtonText(x) { if (!isRecoverableQualityRow(x)) return '暂时补不了'; const kinds = recollectKinds(x); if (kinds.length === 1 && kinds[0] === 'daily') return '补行情'; if (kinds.length === 1 && kinds[0] === 'seat_rank') return '补席位'; return '重新获取' }
 function qualityStatusLabel(x) { return x.unrecoverable_kinds?.length ? '部分拿到·暂时缺项' : statusLabel(x.status) }
 function statusClass(status, x = {}) { if (x.unrecoverable_kinds?.length) return 'unrecoverable-text'; return status === 'ok' ? 'positive-text' : status === 'failed' ? 'negative-text' : 'warn-text' }
+function coverageCell(row, kind) { return row?.cells?.[kind] || { status: 'missing', rows: 0, message: '未采集', source: '-' } }
+function coverageCellLabel(cell) {
+  const labels = { ok: '✓', fallback: '备', partial: '!', missing: '—', failed: '×', not_supported: 'NA' }
+  const base = labels[cell.status] || '?'
+  if (['ok', 'fallback', 'partial'].includes(cell.status) && cell.rows) return `${base} ${fmtNum(cell.rows)}`
+  return base
+}
 function compactNumber(v) { const n = Number(v || 0); if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(1)}亿`; if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`; return String(Math.round(n)) }
 function toneClass(v) { const n = Number(v || 0); return n > 0 ? 'tone-up' : n < 0 ? 'tone-down' : 'tone-flat' }
 function barWidth(v) { return `${Math.min(100, Math.max(6, Math.abs(Number(v || 0)) * 12))}%` }
@@ -997,6 +1030,21 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .seat-main { margin-top:8px; font-size:22px; font-weight:900; }
 .seat-sub { margin-top:4px; color:#64748b; font-size:12px; }
 .quality-actions { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:12px; color:#64748b; background:#f8fafc; border:1px solid #eef2f7; border-radius:14px; padding:10px 12px; font-size:13px; }
+.coverage-matrix { border:1px solid #e8edf5; border-radius:16px; background:#fff; margin-bottom:14px; overflow:hidden; }
+.coverage-matrix-head { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:12px 14px; background:linear-gradient(180deg,#fbfdff,#f8fafc); border-bottom:1px solid #eef2f7; }
+.coverage-matrix-head b { color:#0f172a; }
+.coverage-matrix-head span { color:#64748b; font-size:12px; font-weight:800; }
+.coverage-matrix-scroll { overflow:auto; }
+.coverage-matrix table { width:100%; min-width:860px; border-collapse:separate; border-spacing:0; font-size:12px; }
+.coverage-matrix th { background:#f8fafc; color:#475569; text-align:left; padding:10px; border-bottom:1px solid #e2e8f0; white-space:nowrap; }
+.coverage-matrix td { padding:10px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
+.coverage-cell { display:inline-flex; min-width:46px; justify-content:center; border-radius:999px; padding:4px 8px; font-weight:950; border:1px solid #e2e8f0; background:#f8fafc; color:#64748b; }
+.coverage-ok { background:#ecfdf5; border-color:#bbf7d0; color:#047857; }
+.coverage-fallback { background:#eef2ff; border-color:#dbe3ff; color:#3157d5; }
+.coverage-partial { background:#fff7ed; border-color:#fed7aa; color:#b45309; }
+.coverage-missing { background:#f8fafc; border-color:#e2e8f0; color:#94a3b8; }
+.coverage-failed { background:#fff1f2; border-color:#fecdd3; color:#be123c; }
+.coverage-not_supported { background:#f1f5f9; border-color:#e2e8f0; color:#94a3b8; }
 .quality-table { width:100%; overflow:auto; }
 .quality-table table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; min-width:780px; }
 .quality-table th { position:sticky; top:0; z-index:1; background:#f8fafc; padding:11px 12px; text-align:left; font-weight:900; color:#475569; border-bottom:1px solid #e2e8f0; white-space:nowrap; }

@@ -78,6 +78,12 @@
 - 统一 FuturesDataProvider adapter 协议。
 - 预留合法授权后的 Wind/iFinD/manual import adapter，不接入未授权私有接口。
 
+### v0.3.1：数据覆盖矩阵
+- 新增 6 所 × 数据类型覆盖矩阵：日行情、席位、席位归档、资金流、基差、仓单、事件日历。
+- 覆盖状态统一为 ok / missing / failed / fallback / partial / not_supported。
+- 生成日报时同步 data_gaps，缺失不隐藏，已恢复自动标记 resolved。
+- 今日看板“数据完整度”展示覆盖矩阵和核心/综合覆盖率。
+
 ---
 
 
