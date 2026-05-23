@@ -31,6 +31,23 @@ class MarketSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class SourceFile(Base):
+    __tablename__ = "source_files"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trade_date: Mapped[str] = mapped_column(String(10), index=True)
+    exchange: Mapped[str] = mapped_column(String(16), index=True)
+    kind: Mapped[str] = mapped_column(String(64), index=True)
+    source: Mapped[str] = mapped_column(String(64), default="")
+    path: Mapped[str] = mapped_column(Text, default="")
+    content_type: Mapped[str] = mapped_column(String(64), default="application/json")
+    rows: Mapped[int] = mapped_column(Integer, default=0)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    sha256: Mapped[str] = mapped_column(String(64), default="", index=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("path", name="uq_source_file_path"),)
+
+
 class Contract(Base):
     __tablename__ = "contracts"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.metadata.variety_meta import EXCHANGE_NAME_TO_CODE, get_variety_name
 from app.models import BasisDaily, CapitalFlowDaily, CrawlerRun, MarketSnapshot, QuheContract, QuheHistoryHolding, SeatRankRow, VarietyDailyFact, WarehouseReceiptDaily
 from app.services.collector import finish_crawler_run, start_crawler_run, update_data_gap
+from app.services.raw_archive import archive_fetch_result, archive_payload
 from app.sources.quhe_source import QuheSource, dash_to_date8, date8_to_dash, ms_to_datetime
 
 SOURCE = "quheqihuo"
@@ -36,6 +37,7 @@ def collect_capital_flow(db: Session, trade_date: str, source: QuheSource | None
     source = source or QuheSource()
     run = start_crawler_run(db, trade_date, "ALL", "capital_flow", source=SOURCE)
     result = source.fetch_capital_flow()
+    archive_fetch_result(db, trade_date=trade_date, exchange="ALL", kind="capital_flow", source=SOURCE, result=result)
     db.add(MarketSnapshot(trade_date=trade_date, exchange="ALL", source=SOURCE, snapshot_type="capital_flow", raw_json=snapshot_json(result)))
     db.execute(delete(CapitalFlowDaily).where(CapitalFlowDaily.trade_date == trade_date, CapitalFlowDaily.source == SOURCE))
     saved = 0
@@ -65,6 +67,7 @@ def collect_basis(db: Session, trade_date: str, source: QuheSource | None = None
     source = source or QuheSource()
     run = start_crawler_run(db, trade_date, "ALL", "basis", source=SOURCE)
     result = source.fetch_basis()
+    archive_fetch_result(db, trade_date=trade_date, exchange="ALL", kind="basis", source=SOURCE, result=result)
     db.add(MarketSnapshot(trade_date=trade_date, exchange="ALL", source=SOURCE, snapshot_type="basis", raw_json=snapshot_json(result)))
     db.execute(delete(BasisDaily).where(BasisDaily.trade_date == trade_date, BasisDaily.source == SOURCE))
     saved = 0
@@ -158,6 +161,7 @@ def collect_warehouse_receipts(db: Session, trade_date: str, source: QuheSource 
     source = source or QuheSource()
     run = start_crawler_run(db, trade_date, "ALL", "warehouse_receipt", source=SOURCE)
     result = source.fetch_warehouse_receipts()
+    archive_fetch_result(db, trade_date=trade_date, exchange="ALL", kind="warehouse_receipt", source=SOURCE, result=result)
     db.add(MarketSnapshot(trade_date=trade_date, exchange="ALL", source=SOURCE, snapshot_type="warehouse_receipt", raw_json=snapshot_json(result)))
     db.execute(delete(WarehouseReceiptDaily).where(WarehouseReceiptDaily.trade_date == trade_date, WarehouseReceiptDaily.source == SOURCE))
     saved = 0
@@ -235,6 +239,7 @@ def collect_official_warehouse_receipts(db: Session, trade_date: str) -> dict[st
         saved_before = total_saved
         try:
             data = fetch()
+            archive_payload(db, trade_date=trade_date, exchange=exchange, kind="warehouse_receipt_official", source=source, payload={"exchange": exchange, "rows": dataframe_dict(data)}, rows=len(data) if isinstance(data, dict) else 0)
             if not isinstance(data, dict):
                 raise ValueError(f"unexpected data type: {type(data).__name__}")
             for raw_symbol, df in data.items():
@@ -270,6 +275,7 @@ def collect_contract_tree(db: Session, trade_date: str, source: QuheSource | Non
     source = source or QuheSource()
     run = start_crawler_run(db, trade_date, "ALL", "quhe_contract_tree", source=SOURCE)
     result = source.fetch_contract_tree()
+    archive_fetch_result(db, trade_date=trade_date, exchange="ALL", kind="quhe_contract_tree", source=SOURCE, result=result)
     db.add(MarketSnapshot(trade_date=trade_date, exchange="ALL", source=SOURCE, snapshot_type="quhe_contract_tree", raw_json=snapshot_json(result)))
     saved = 0
     for product in result.rows:
@@ -475,6 +481,20 @@ def date8_from_ms(value: Any) -> str:
 
 def snapshot_json(result) -> str:
     return json.dumps({"rows": result.rows, "row_count": len(result.rows), "error": result.error, "meta": result.meta}, ensure_ascii=False, default=str)
+
+
+def dataframe_dict(data: Any) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        return {"value": str(type(data).__name__)}
+    out: dict[str, Any] = {}
+    for key, value in data.items():
+        if value is None:
+            out[str(key)] = []
+        elif hasattr(value, "where") and hasattr(value, "notnull") and hasattr(value, "to_dict"):
+            out[str(key)] = value.where(value.notnull(), None).to_dict(orient="records")
+        else:
+            out[str(key)] = str(value)
+    return out
 
 
 def normalize_symbol(value: Any) -> str:

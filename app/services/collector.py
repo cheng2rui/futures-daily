@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import CrawlerRun, DailyBar, DataGap, MarketSnapshot, SeatRankRow
 from app.services.normalizer import normalize_daily_row, normalize_seat_row
+from app.services.raw_archive import archive_fetch_result
 from app.sources.registry import get_market_provider
 
 
@@ -28,6 +29,7 @@ def collect_daily_market(db: Session, trade_date: str | None = None, exchanges: 
         run = start_crawler_run(db, trade_date, exchange, "daily")
         db.execute(delete(DailyBar).where(DailyBar.trade_date == trade_date, DailyBar.exchange == exchange))
         result = source.fetch_daily(trade_date, exchange)
+        archive_fetch_result(db, trade_date=trade_date, exchange=exchange, kind="daily", source="akshare", result=result)
         db.add(MarketSnapshot(
             trade_date=trade_date,
             exchange=exchange,
@@ -66,6 +68,7 @@ def collect_seat_ranks(db: Session, trade_date: str | None = None, exchanges: li
         run = start_crawler_run(db, trade_date, exchange, "seat_rank")
         db.execute(delete(SeatRankRow).where(SeatRankRow.trade_date == trade_date, SeatRankRow.exchange == exchange))
         result = source.fetch_seat_rank(trade_date, exchange)
+        archive_fetch_result(db, trade_date=trade_date, exchange=exchange, kind="seat_rank", source="akshare", result=result)
         db.add(MarketSnapshot(
             trade_date=trade_date,
             exchange=exchange,

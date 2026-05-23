@@ -84,6 +84,11 @@
 - 生成日报时同步 data_gaps，缺失不隐藏，已恢复自动标记 resolved。
 - 今日看板“数据完整度”展示覆盖矩阵和核心/综合覆盖率。
 
+### v0.3.2：raw archive 原始数据归档
+- 新增 source_files 索引表，保存原始响应文件路径、hash、行数、错误信息和大小。
+- 日行情、席位、曲合增强源、官方仓单补充会把 vendor-shaped payload 写入 `data/raw_archive/`。
+- 新增 raw archive 查询接口，后续 parser 修复可直接读取历史原始响应重放。
+
 ---
 
 

@@ -7,10 +7,11 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import CrawlerRun, DailyBar, DailyCoverage, DataGap, VarietyDailyFact
+from app.models import CrawlerRun, DailyBar, DailyCoverage, DataGap, SourceFile, VarietyDailyFact
 from app.services.data_mart import build_variety_dataset, materialize_variety_dataset
 from app.services.gap_analysis import build_gap_analysis
 from app.services.quhe_collector import collect_quhe_enhancements
+from app.services.raw_archive import list_archives, read_archive, source_file_item
 from app.services.trading_day import normalize_trade_date
 
 router = APIRouter(prefix="/api/dataset", tags=["dataset"])
@@ -89,6 +90,20 @@ def list_crawler_runs(trade_date: str | None = None, limit: int = 100, db: Sessi
 @router.get("/gap-analysis/{trade_date}")
 def get_gap_analysis(trade_date: str, db: Session = Depends(get_db)):
     return build_gap_analysis(db, normalize_trade_date(trade_date))
+
+
+@router.get("/raw-archives")
+def list_raw_archives(trade_date: str | None = None, exchange: str | None = None, kind: str | None = None, limit: int = 100, db: Session = Depends(get_db)):
+    date_filter = normalize_trade_date(trade_date) if trade_date else None
+    return [source_file_item(r) for r in list_archives(db, trade_date=date_filter, exchange=exchange, kind=kind, limit=limit)]
+
+
+@router.get("/raw-archives/{file_id}")
+def get_raw_archive(file_id: int, db: Session = Depends(get_db)):
+    row = db.scalar(select(SourceFile).where(SourceFile.id == file_id))
+    if not row:
+        return {"error": "not_found"}
+    return read_archive(row)
 
 
 @router.get("/gaps")
