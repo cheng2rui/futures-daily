@@ -218,9 +218,12 @@
 
           <template v-else-if="card.id === 'tomorrow'">
             <div v-if="!tomorrowWatch.length" class="empty-state small">暂无明日观察清单。</div>
-            <div v-else class="watch-list">
-              <div v-for="item in visibleItems(tomorrowWatch, card, 4)" :key="`${item.type}-${item.title}`" class="watch-item" :class="item.priority === 'high' ? 'high' : ''">
+            <div v-else class="watch-list tomorrow-list">
+              <div v-for="item in visibleItems(tomorrowWatch, card, 5)" :key="`${item.type}-${item.title}`" class="watch-item tomorrow-item" :class="item.priority === 'high' ? 'high' : ''">
+                <div class="tomorrow-top"><em>{{ item.category || '观察' }}</em><strong>{{ item.priority === 'high' ? '重点' : '关注' }}</strong></div>
                 <b>{{ item.title }}</b><span>{{ item.body }}</span>
+                <ul v-if="item.evidence?.length" class="tomorrow-evidence"><li v-for="ev in item.evidence" :key="ev">{{ ev }}</li></ul>
+                <div v-if="item.impact" class="tomorrow-impact">影响：{{ item.impact }}</div>
               </div>
             </div>
           </template>
@@ -366,7 +369,7 @@ const topFocus = computed(() => abnormalCards.value[0] || watchDigestItems.value
 const topFocusText = computed(() => topFocus.value ? `${topFocus.value.name || topFocus.value.symbol || '重点品种'}：${topFocus.value.signal || topFocus.value.summary || '有变化，建议关注'}` : '暂无特别突出的品种异动')
 const tomorrowText = computed(() => {
   const item = tomorrowWatch.value[0]
-  if (item) return `${item.title}：${item.body}`
+  if (item) return `${item.category ? item.category + '｜' : ''}${item.title}：${item.body}`
   const focus = topFocus.value
   return focus?.watch_next ? `${focus.name || focus.symbol}：${focus.watch_next}` : '暂无明确观察项，可先关注自选品种和成交活跃品种'
 })
@@ -826,6 +829,13 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .watch-list { display:grid; gap:10px; }
 .watch-item { border:1px solid #e8edf5; border-radius:14px; padding:12px; background:#fff; }
 .watch-item.high { border-color:#ffd591; background:#fffaf0; }
+.tomorrow-list { gap:12px; }
+.tomorrow-item { display:grid; gap:8px; }
+.tomorrow-top { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+.tomorrow-top em { font-style:normal; color:#3157d5; background:#eef2ff; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:950; }
+.tomorrow-top strong { color:#b45309; font-size:12px; }
+.tomorrow-evidence { margin:0; padding-left:18px; color:#64748b; line-height:1.5; font-size:12px; }
+.tomorrow-impact { color:#8a5200; background:#fff7e6; border:1px solid #ffe4ad; border-radius:10px; padding:8px; font-size:12px; line-height:1.45; }
 .watch-item b { display:block; color:#0f172a; margin-bottom:5px; }
 .watch-item span { color:#64748b; line-height:1.6; }
 .layout-grid, .chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }

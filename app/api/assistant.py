@@ -125,7 +125,13 @@ def _watch_answer(report: dict[str, Any], question: str) -> dict[str, Any]:
 def _tomorrow_answer(report: dict[str, Any], question: str) -> dict[str, Any]:
     items = ((report.get("intelligence") or {}).get("tomorrow_watch") or [])
     if items:
-        bullets = [f"{x.get('title') or '观察项'}：{x.get('body') or ''}" for x in items[:8]]
+        bullets = []
+        for x in items[:8]:
+            prefix = f"{x.get('category')}｜" if x.get("category") else ""
+            line = f"{prefix}{x.get('title') or '观察项'}：{x.get('body') or ''}"
+            if x.get("impact"):
+                line += f"｜影响：{x.get('impact')}"
+            bullets.append(line)
         return _answer("明天重点看什么？", items[0].get("title") or "先看重点观察清单。", bullets, question)
     abnormal = _top_abnormal(report, limit=5)
     bullets = [f"{x.get('name') or x.get('symbol')}：{x.get('watch_next')}" for x in abnormal if x.get("watch_next")]

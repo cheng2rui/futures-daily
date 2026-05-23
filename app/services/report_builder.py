@@ -21,7 +21,7 @@ from app.services.structure import build_structure, pct_change, sector_for
 
 from app.version import VERSION
 
-REPORT_SCHEMA_VERSION = 4
+REPORT_SCHEMA_VERSION = 5
 LIQUID_MIN_VOLUME = 1000
 LIQUID_MIN_OPEN_INTEREST = 1000
 
@@ -590,42 +590,132 @@ def build_watch_digest_summary(ok_items: list[dict], all_items: list[dict]) -> s
     return f"自选品种覆盖 {len(ok_items)}/{len(all_items)} 个；上涨 {len(strong)} 个、下跌 {len(weak)} 个；重点波动：{hot_text}；其中 {len(news)} 个品种有关联资讯观点。"
 
 def build_tomorrow_watch(abnormal_cards: list[dict], data_quality: dict, gap_analysis: dict, news_digest: dict | None = None) -> list[dict]:
-    items = []
+    """Build a next-day watch list from existing report facts.
+
+    The goal is not to predict prices, but to tell the user what evidence should
+    be checked next: price continuation, seat confirmation, physical-market
+    validation, news follow-through, and data-quality gaps.
+    """
+    items: list[dict] = []
+
+    def add_item(*, type_: str, title: str, body: str, category: str, priority: str = "normal", symbol: str | None = None, name: str | None = None, evidence: list[str] | None = None, impact: str = "") -> None:
+        if not title or not body:
+            return
+        key = (type_, symbol or "", title)
+        if any((x.get("type"), x.get("symbol") or "", x.get("title")) == key for x in items):
+            return
+        items.append({
+            "type": type_,
+            "category": category,
+            "title": title,
+            "body": body,
+            "priority": priority,
+            "symbol": symbol,
+            "name": name,
+            "evidence": [x for x in (evidence or []) if x][:4],
+            "impact": impact,
+        })
+
     for card in abnormal_cards[:6]:
-        items.append({
-            "type": "variety",
-            "title": f"{card.get('name') or card.get('symbol')}后续验证",
-            "body": card.get("watch_next") or "观察价格、持仓和资讯是否继续同向验证。",
-            "priority": "high" if card.get("score", 0) >= 20 else "normal",
-        })
-    bad_exchanges = [x.get("exchange") for x in data_quality.get("exchanges", []) if x.get("status") != "ok"] if data_quality else []
+        evidence_chain = card.get("evidence_chain") or []
+        evidence_text = [str(x.get("text") or "") for x in evidence_chain if x.get("text") and "暂无" not in str(x.get("text"))]
+        labels = {str(x.get("key") or "") for x in evidence_chain}
+        dims = {str(x.get("name") or "") for x in card.get("dimensions") or []}
+        category = "价格延续"
+        if "席位净变化" in dims or "seat" in labels:
+            category = "席位验证"
+        if "仓单变化" in dims or "基差偏离" in dims or "physical" in labels:
+            category = "仓单/基差验证"
+        if "资讯热度" in dims or card.get("news_viewpoint"):
+            category = "资讯验证"
+        name = card.get("name") or card.get("symbol") or "重点品种"
+        watch_next = card.get("watch_next") or "观察价格、持仓和资讯是否继续同向验证。"
+        body = f"{watch_next}"
+        if card.get("signal"):
+            body = f"{card.get('signal')}；{body}"
+        add_item(
+            type_="variety",
+            category=category,
+            title=f"{name}后续验证",
+            body=body,
+            priority="high" if card.get("score", 0) >= 20 else "normal",
+            symbol=card.get("symbol"),
+            name=name,
+            evidence=evidence_text,
+            impact="若明天继续同向验证，这个品种应保持在重点观察名单。",
+        )
+
+    bad_exchanges = [x for x in (data_quality or {}).get("exchanges", []) if x.get("status") != "ok"]
     if bad_exchanges:
-        items.append({
-            "type": "data_quality",
-            "title": "数据覆盖复核",
-            "body": "优先复核缺失/异常交易所：" + "、".join(bad_exchanges),
-            "priority": "high",
-        })
+        names = "、".join(str(x.get("exchange")) for x in bad_exchanges[:6])
+        notes = [f"{x.get('exchange')}：{x.get('note') or '部分数据缺失'}" for x in bad_exchanges[:4]]
+        add_item(
+            type_="data_quality",
+            category="数据复核",
+            title="先确认缺失数据",
+            body="优先复核缺失/异常交易所：" + names,
+            priority="high",
+            evidence=notes,
+            impact="数据缺失会降低席位、仓单或基差相关结论的权重。",
+        )
+
+    if gap_analysis.get("actionable_count", 0):
+        add_item(
+            type_="data_gap",
+            category="数据复核",
+            title="补齐可处理的数据缺口",
+            body=f"仍有 {gap_analysis.get('actionable_count')} 个可尝试补齐的数据项，修复前相关结论要打折。",
+            priority="high",
+            evidence=["优先处理能影响行情、席位或仓单判断的数据项。"],
+            impact="补齐后日报结论会更可靠。",
+        )
+
     news_summary = (news_digest or {}).get("summary") or {}
     viewpoints = (news_digest or {}).get("viewpoints") or []
     if viewpoints:
         bias_label = {"positive": "偏多", "negative": "偏空", "mixed": "分歧", "neutral": "中性"}
         hot = "、".join(f"{v.get('name') or v.get('symbol')}({bias_label.get(v.get('bias'), '中性')})" for v in viewpoints[:5])
-        items.append({"type": "viewpoint", "title": "资讯观点复核", "body": f"重点复核资讯观点：{hot}，观察是否与数据异动互相验证。", "priority": "normal"})
+        add_item(
+            type_="viewpoint",
+            category="资讯验证",
+            title="复核资讯观点是否发酵",
+            body=f"重点看这些资讯观点是否继续影响盘面：{hot}。",
+            priority="normal",
+            evidence=[str(v.get("summary") or "") for v in viewpoints[:3]],
+            impact="若资讯与价格/席位同向，异动可信度会提高。",
+        )
     if news_summary.get("top_symbols"):
         top = "、".join(f"{sym}({count})" for sym, count in news_summary.get("top_symbols", [])[:5])
-        items.append({"type": "news", "title": "资讯热度跟踪", "body": f"重点复核资讯高频品种：{top}，判断是否与价格/持仓异动共振。", "priority": "normal"})
-    if gap_analysis.get("actionable_count", 0):
-        items.append({
-            "type": "data_gap",
-            "title": "可行动数据缺口",
-            "body": f"仍有 {gap_analysis.get('actionable_count')} 个可行动缺口，修复前降低相关结论权重。",
-            "priority": "high",
-        })
-    items.extend([
-        {"type": "calendar", "title": "交易所公告", "body": "关注保证金、涨跌停、交割月、最后交易日和夜盘安排。", "priority": "normal"},
-        {"type": "macro", "title": "宏观/产业事件", "body": "能化关注 EIA/OPEC，农产品关注 USDA/天气，贵金属关注美元与利率数据。", "priority": "normal"},
-    ])
+        add_item(
+            type_="news",
+            category="资讯热度",
+            title="跟踪高频资讯品种",
+            body=f"重点复核资讯高频品种：{top}，判断是否与价格/持仓异动共振。",
+            priority="normal",
+            evidence=["资讯热度高但价格未确认时，先观察，不急着下结论。"],
+            impact="适合用来发现可能继续发酵的主题。",
+        )
+
+    add_item(
+        type_="calendar",
+        category="交易日历",
+        title="留意交易所公告",
+        body="关注保证金、涨跌停、交割月、最后交易日和夜盘安排。",
+        priority="normal",
+        evidence=["临近交割或保证金调整时，波动和持仓变化可能放大。"],
+        impact="主要影响短线波动和持仓风险。",
+    )
+    add_item(
+        type_="macro",
+        category="宏观/产业事件",
+        title="留意宏观和产业数据",
+        body="能化关注 EIA/OPEC，农产品关注 USDA/天气，贵金属关注美元与利率数据。",
+        priority="normal",
+        evidence=["事件日附近，价格异动更需要结合外部变量验证。"],
+        impact="主要用于解释隔夜或次日跳空/放量。",
+    )
+
+    items.sort(key=lambda x: 0 if x.get("priority") == "high" else 1)
     return items[:10]
 
 

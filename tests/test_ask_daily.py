@@ -16,7 +16,7 @@ REPORT = {
                 "watch_next": "看是否继续增仓下跌",
             }
         ],
-        "tomorrow_watch": [{"title": "关注 PTA", "body": "确认下跌是否延续"}],
+        "tomorrow_watch": [{"title": "关注 PTA", "body": "确认下跌是否延续", "category": "价格延续", "impact": "若延续下跌，继续重点观察"}],
         "watch_digest": {"summary": "自选整体偏弱", "items": [{"symbol": "TA", "name": "PTA", "signal": "偏弱"}]},
     },
     "data_quality": {"status": "partial", "overall_coverage_pct": 66.7, "summary": "部分交易所缺席位", "exchanges": [{"exchange": "DCE", "status": "partial", "note": "席位缺失"}]},
@@ -33,6 +33,7 @@ def check() -> None:
     tomorrow = answer_daily_question(REPORT, "明天重点看什么？")
     assert tomorrow["title"] == "明天重点看什么？"
     assert "关注 PTA" in tomorrow["headline"]
+    assert "价格延续" in tomorrow["bullets"][0]
 
     quality = answer_daily_question(REPORT, "数据够不够用？")
     assert quality["title"] == "数据够不够用？"
