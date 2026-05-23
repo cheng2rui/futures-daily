@@ -13,6 +13,7 @@
         <router-link to="/history">历史复盘</router-link>
         <router-link to="/seats">席位动向</router-link>
         <router-link to="/dataset">数据完整度</router-link>
+        <router-link to="/diagnostics">数据诊断</router-link>
         <router-link to="/events">事件日历</router-link>
         <router-link to="/jobs">运行记录</router-link>
         <router-link to="/settings">设置</router-link>

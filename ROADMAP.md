@@ -99,6 +99,11 @@
 - 新增 DCE / INE 弱源诊断服务，汇总覆盖状态、最近 crawler run、data_gap、raw archive 和建议动作。
 - 新增 `GET /api/quality/diagnostics/{trade_date}`，支持 `exchange=DCE|INE` 定向查看。
 
+### v0.3.5：数据诊断前端页
+- 新增“数据诊断”导航页，集中展示覆盖矩阵、DCE/INE 诊断、可补采动作和 raw archive。
+- 页面支持按交易所/类型筛选 raw archive，并直接触发 parser replay dry-run。
+- DCE/INE 的 daily/seat_rank 缺口支持前端一键调用 recollect 并刷新诊断结果。
+
 ---
 
 
