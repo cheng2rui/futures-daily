@@ -26,9 +26,172 @@ from app.services.term_structure import build_term_structure
 
 from app.version import VERSION
 
-REPORT_SCHEMA_VERSION = 8
+REPORT_SCHEMA_VERSION = 9
 LIQUID_MIN_VOLUME = 1000
 LIQUID_MIN_OPEN_INTEREST = 1000
+PRICE_FLAT_THRESHOLD_PCT = 0.2
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def _pct_delta(delta: float | None, base: float | None) -> float | None:
+    if delta is None or not base:
+        return None
+    return delta / base * 100
+
+
+def temperature_stage(score: float) -> str:
+    if score >= 85:
+        return "极热"
+    if score >= 70:
+        return "高温"
+    if score >= 55:
+        return "偏热"
+    if score >= 40:
+        return "中性"
+    if score >= 25:
+        return "偏冷"
+    return "冰点"
+
+
+def market_temperature_tone(stage: str) -> str:
+    if stage in {"极热", "高温"}:
+        return "warning"
+    if stage in {"偏热", "中性"}:
+        return "neutral"
+    return "info"
+
+
+def direction_label(direction_bias: float, activity_score: float, oi_delta_pct: float | None) -> str:
+    if activity_score < 35 and oi_delta_pct is not None and oi_delta_pct < -1:
+        return "资金退潮"
+    if abs(direction_bias) < 0.18:
+        return "多空分歧"
+    return "多方占优" if direction_bias > 0 else "空方占优"
+
+
+def build_market_temperature(
+    *,
+    ranking_valid: list[tuple[DailyBar, float]],
+    main_bars: list[DailyBar],
+    main_oi_deltas: dict[tuple[str, str, str], float | None] | None = None,
+    sectors: list[dict] | None = None,
+    volume_delta_pct: float | None = None,
+    capital_flow_amount: float = 0.0,
+    capital_inflow_amount: float = 0.0,
+    capital_outflow_amount: float = 0.0,
+    total_oi_delta: float | None = None,
+    total_oi: float | None = None,
+) -> dict:
+    """期货市场综合温度：衡量市场活跃度/资金博弈强度，方向单独表达多空归属。"""
+    main_oi_deltas = main_oi_deltas or {}
+    sectors = sectors or []
+    valid_items = [(bar, chg) for bar, chg in ranking_valid if chg is not None]
+    valid_count = max(1, len(valid_items))
+    oi_delta_pct = _pct_delta(total_oi_delta, (total_oi or 0) - (total_oi_delta or 0))
+
+    # 1) 资金流强度 25：资金流入/流出、全市场持仓变化、成交较前日变化共同决定活跃度。
+    gross_flow = abs(capital_inflow_amount) + abs(capital_outflow_amount)
+    flow_score = _clamp(gross_flow / 20_000_000_000 * 8, 0, 8) if gross_flow else 0
+    flow_score += _clamp(abs(capital_flow_amount) / 10_000_000_000 * 4, 0, 4) if gross_flow else 0
+    volume_score = 6.0 if volume_delta_pct is None else _clamp(6 + volume_delta_pct * 0.18, 0, 10)
+    oi_flow_score = 5.0 if oi_delta_pct is None else _clamp(5 + oi_delta_pct * 0.9, 0, 10)
+    capital_score = round(_clamp(flow_score + volume_score + oi_flow_score, 0, 25), 1)
+
+    # 2) 多空占优强度 25：上涨增仓/下跌增仓都是高温，方向由多空偏置决定。
+    long_points = 0.0
+    short_points = 0.0
+    directional_activity = 0.0
+    for bar, chg in valid_items:
+        key = (get_exchange_code(bar.symbol, bar.exchange), bar.symbol.upper(), str(bar.contract or ""))
+        oi_delta = main_oi_deltas.get(key)
+        oi_sign = 1 if oi_delta is not None and oi_delta > 0 else -1 if oi_delta is not None and oi_delta < 0 else 0
+        abs_chg = abs(chg)
+        if abs_chg < PRICE_FLAT_THRESHOLD_PCT:
+            item_activity = 0.7 if oi_sign > 0 else 0.25 if oi_sign < 0 else 0.4
+        elif chg > 0:
+            item_activity = 1.0 if oi_sign > 0 else 0.65 if oi_sign < 0 else 0.75
+            long_points += item_activity * (1 + min(abs_chg, 3) / 3)
+        else:
+            item_activity = 1.0 if oi_sign > 0 else 0.65 if oi_sign < 0 else 0.75
+            short_points += item_activity * (1 + min(abs_chg, 3) / 3)
+        directional_activity += item_activity
+    dominance_score = round(_clamp(directional_activity / valid_count * 25, 0, 25), 1)
+
+    # 3) 板块多空共振 20：板块涨跌方向越清晰、活跃板块越多，温度越高。
+    sector_signal_count = 0
+    sector_activity = 0.0
+    for sector in sectors:
+        count = max(1, int(sector.get("count") or 0))
+        up = float(sector.get("up") or 0)
+        down = float(sector.get("down") or 0)
+        imbalance = abs(up - down) / count
+        if count >= 2:
+            sector_signal_count += 1
+            sector_activity += _clamp(0.35 + imbalance * 0.9, 0, 1)
+    sector_score = round(_clamp((sector_activity / max(1, sector_signal_count)) * 20, 0, 20), 1) if sector_signal_count else 8.0
+
+    # 4) 主力合约日增减仓确认 20：主力价格方向明确且增仓，趋势确认度最高；减仓则打折。
+    main_confirmation = 0.0
+    main_count = 0
+    for bar in main_bars:
+        chg = pct_change(bar)
+        if chg is None:
+            continue
+        key = (get_exchange_code(bar.symbol, bar.exchange), bar.symbol.upper(), str(bar.contract or ""))
+        oi_delta = main_oi_deltas.get(key)
+        if oi_delta is None:
+            item = 10.0
+        elif abs(chg) < PRICE_FLAT_THRESHOLD_PCT:
+            item = 14.0 if oi_delta > 0 else 5.0 if oi_delta < 0 else 8.0
+        elif oi_delta > 0:
+            item = 20.0
+        elif oi_delta < 0:
+            item = 12.0
+        else:
+            item = 14.0
+        main_confirmation += item
+        main_count += 1
+    main_score = round(_clamp(main_confirmation / max(1, main_count), 0, 20), 1) if main_count else 10.0
+
+    # 5) 波动/成交活跃 10：只衡量交易机会/波动强度，不判断多空。
+    avg_abs_change = sum(abs(chg) for _, chg in valid_items) / valid_count if valid_items else 0.0
+    volatility_score = 3 + min(avg_abs_change * 2.4, 5)
+    if volume_delta_pct is not None:
+        volatility_score += _clamp(volume_delta_pct * 0.05, -2, 2)
+    volatility_score = round(_clamp(volatility_score, 0, 10), 1)
+
+    score = round(_clamp(capital_score + dominance_score + sector_score + main_score + volatility_score, 0, 100), 1)
+    direction_denominator = max(1.0, long_points + short_points)
+    bias = (long_points - short_points) / direction_denominator
+    direction = direction_label(bias, score, oi_delta_pct)
+    long_ratio = round(long_points / direction_denominator * 100, 1)
+    short_ratio = round(short_points / direction_denominator * 100, 1)
+
+    details = [
+        {"name": "资金流强度", "score": capital_score, "max": 25, "note": "资金流、成交较前日、全市场持仓变化"},
+        {"name": "多空占优强度", "score": dominance_score, "max": 25, "note": "价格涨跌 + 主力日增减仓四象限"},
+        {"name": "板块多空共振", "score": sector_score, "max": 20, "note": "板块上涨/下跌扩散与方向一致性"},
+        {"name": "主力合约确认", "score": main_score, "max": 20, "note": "主力合约上涨/下跌是否由增仓确认"},
+        {"name": "波动成交活跃", "score": volatility_score, "max": 10, "note": "主力涨跌幅与成交变化"},
+    ]
+    return {
+        "score": score,
+        "stage": temperature_stage(score),
+        "heat": f"{temperature_stage(score)}｜{direction}",
+        "risk": round(100 - score, 1),
+        "direction": direction,
+        "direction_bias": round(bias, 3),
+        "long_ratio": long_ratio,
+        "short_ratio": short_ratio,
+        "capital_flow_amount": round(capital_flow_amount, 2),
+        "total_oi_delta": round(total_oi_delta, 2) if total_oi_delta is not None else None,
+        "total_oi_delta_pct": round(oi_delta_pct, 2) if oi_delta_pct is not None else None,
+        "volume_delta_pct": volume_delta_pct,
+        "details": details,
+    }
 
 
 def notional_value(bar: DailyBar) -> float | None:
@@ -81,10 +244,6 @@ def build_report(db: Session, trade_date: str) -> Report:
     )[:10]
 
     valid_count = max(1, up_count + down_count)
-    heat = round(up_count / valid_count * 100, 1)
-    risk = round(down_count / valid_count * 100, 1)
-    score = round((heat + (100 - risk)) / 2, 1)
-    stage = "偏强" if score >= 65 else "偏弱" if score <= 40 else "分化"
 
     def bar_item(bar: DailyBar, chg: float | None = None) -> dict:
         raw = {}
@@ -117,6 +276,25 @@ def build_report(db: Session, trade_date: str) -> Report:
     capital_flow_amount = sum(float(row.amount or 0) for row in capital_flow_rows)
     capital_inflow_amount = sum(float(row.amount or 0) for row in capital_flow_rows if (row.amount or 0) > 0)
     capital_outflow_amount = sum(float(row.amount or 0) for row in capital_flow_rows if (row.amount or 0) < 0)
+    main_oi_deltas = previous_main_open_interest_deltas(db, trade_date, main_bars)
+    total_oi_delta = previous_total_open_interest_delta(db, trade_date)
+    total_oi = sum(float(bar.open_interest or 0) for bar in bars)
+    temperature = build_market_temperature(
+        ranking_valid=ranking_valid,
+        main_bars=main_bars,
+        main_oi_deltas=main_oi_deltas,
+        sectors=structure.get("sector_breadth") or sectors,
+        volume_delta_pct=volume_delta_pct,
+        capital_flow_amount=capital_flow_amount,
+        capital_inflow_amount=capital_inflow_amount,
+        capital_outflow_amount=capital_outflow_amount,
+        total_oi_delta=total_oi_delta,
+        total_oi=total_oi,
+    )
+    score = temperature["score"]
+    stage = temperature["stage"]
+    heat = temperature["heat"]
+    risk = temperature["risk"]
     materialize_variety_dataset(db, trade_date)
     coverage_matrix = build_coverage_matrix(db, trade_date, sync_gaps=True)
     data_quality["coverage_matrix"] = coverage_matrix
@@ -167,6 +345,8 @@ def build_report(db: Session, trade_date: str) -> Report:
             "stage": stage,
             "heat": heat,
             "risk": risk,
+            "direction": temperature.get("direction"),
+            "temperature": temperature,
             "summary": report_sections[0]["body"],
         },
         "market": {
@@ -257,6 +437,32 @@ def previous_total_volume(db: Session, trade_date: str) -> float | None:
     return sum(float(v or 0) for v in db.scalars(select(DailyBar.volume).where(DailyBar.trade_date == prev_date)).all())
 
 
+def previous_total_open_interest_delta(db: Session, trade_date: str) -> float | None:
+    prev_date = db.scalar(select(DailyBar.trade_date).where(DailyBar.trade_date < trade_date).group_by(DailyBar.trade_date).order_by(desc(DailyBar.trade_date)).limit(1))
+    if not prev_date:
+        return None
+    current = sum(float(v or 0) for v in db.scalars(select(DailyBar.open_interest).where(DailyBar.trade_date == trade_date)).all())
+    previous = sum(float(v or 0) for v in db.scalars(select(DailyBar.open_interest).where(DailyBar.trade_date == prev_date)).all())
+    return current - previous
+
+
+def previous_main_open_interest_deltas(db: Session, trade_date: str, main_bars: list[DailyBar]) -> dict[tuple[str, str, str], float | None]:
+    prev_date = db.scalar(select(DailyBar.trade_date).where(DailyBar.trade_date < trade_date).group_by(DailyBar.trade_date).order_by(desc(DailyBar.trade_date)).limit(1))
+    if not prev_date:
+        return {}
+    prev_bars = list(db.scalars(select(DailyBar).where(DailyBar.trade_date == prev_date)))
+    prev_by_contract = {
+        (get_exchange_code(bar.symbol, bar.exchange), bar.symbol.upper(), str(bar.contract or "")): float(bar.open_interest or 0)
+        for bar in prev_bars
+    }
+    deltas: dict[tuple[str, str, str], float | None] = {}
+    for bar in main_bars:
+        key = (get_exchange_code(bar.symbol, bar.exchange), bar.symbol.upper(), str(bar.contract or ""))
+        previous = prev_by_contract.get(key)
+        deltas[key] = None if previous is None else float(bar.open_interest or 0) - previous
+    return deltas
+
+
 def pick_main_bars(bars: list[DailyBar]) -> list[DailyBar]:
     grouped: dict[tuple[str, str], list[DailyBar]] = defaultdict(list)
     for bar in bars:
@@ -305,8 +511,8 @@ def build_report_sections(
     return [
         {
             "title": "市场结论",
-            "tone": "neutral" if stage == "分化" else "positive" if stage == "偏强" else "negative",
-            "body": f"当前市场状态为{stage}，综合分 {score}。主力合约流动性过滤后，上涨 {up_count} 个、下跌 {down_count} 个；活跃度主要集中在 {active_text}。",
+            "tone": market_temperature_tone(stage),
+            "body": f"当前市场温度为{stage}，综合温度 {score}。该分数衡量活跃度与资金博弈强度，不等同于看多；主力合约流动性过滤后，上涨 {up_count} 个、下跌 {down_count} 个；活跃度主要集中在 {active_text}。",
         },
         {
             "title": "主线机会",

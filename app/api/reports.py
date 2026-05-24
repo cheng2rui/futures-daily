@@ -294,7 +294,7 @@ def empty_report():
     return {
         "date": None,
         "meta": {"generated_at": None, "version": VERSION, "report_schema_version": REPORT_SCHEMA_VERSION},
-        "overview": {"score": 0, "stage": "暂无数据", "heat": 0, "risk": 0, "summary": "暂无日报，请先生成。"},
+        "overview": {"score": 0, "stage": "暂无数据", "heat": "暂无热度", "risk": 0, "direction": "暂无方向", "temperature": {"details": []}, "summary": "暂无日报，请先生成。"},
         "market": {"up_count": 0, "down_count": 0, "turnover": 0, "volume": 0, "contracts": 0},
         "sectors": [],
         "rankings": {"gainers": [], "losers": [], "volume": [], "open_interest": []},
