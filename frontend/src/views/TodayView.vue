@@ -259,7 +259,7 @@
             <div v-else class="chain-grid dashboard-inner-grid">
               <div v-for="item in visibleItems(industryChainItems, card, 4)" :key="item.id" class="chain-card" :class="`chain-${item.direction || 'unknown'}`">
                 <div class="chain-head">
-                  <div><b>{{ item.name }}</b><span>{{ item.count }} 个品种｜上涨 {{ item.up }} / 下跌 {{ item.down }}</span></div>
+                  <div><b>{{ item.name }}</b><span>{{ item.count }} 个品种｜<i class="up-text">上涨 {{ item.up }}</i> / <i class="down-text">下跌 {{ item.down }}</i></span></div>
                   <em>{{ chainDirectionLabel(item.direction) }}</em>
                 </div>
                 <div class="chain-summary">{{ item.summary }}</div>
@@ -1019,6 +1019,7 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .signal-item:last-child { border-bottom:none; }
 .signal-name { color:#64748b; }
 .tone-up { color:#d93655; } .tone-down { color:#12966b; } .tone-flat { color:#64748b; } .tone-warn { color:#b7791f; }
+.up-text { color:#e03a3e; font-style:normal; font-weight:900; } .down-text { color:#16a05d; font-style:normal; font-weight:900; }
 .sector-list { display:grid; gap:13px; }
 .sector-head { display:flex; justify-content:space-between; margin-bottom:7px; font-weight:800; color:#1f2937; }
 .bar { height:8px; background:#f1f5f9; border-radius:999px; overflow:hidden; }
