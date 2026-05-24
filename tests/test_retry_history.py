@@ -28,13 +28,41 @@ def check() -> None:
                     "step": {"type": "recollect", "exchange": "DCE", "kind": "daily", "priority": 10},
                     "status": "success",
                     "summary": "改善 2 项",
-                    "coverage_diff": {"improved_cells": 2, "regressed_cells": 0, "core_coverage_after": 60},
+                    "coverage_diff": {
+                        "improved_cells": 2,
+                        "regressed_cells": 0,
+                        "core_coverage_after": 60,
+                        "changes": [
+                            {
+                                "exchange": "DCE",
+                                "kind": "daily",
+                                "direction": "improved",
+                                "before": {"status": "missing", "rows": 0},
+                                "after": {"status": "ok", "rows": 24},
+                                "row_delta": 24,
+                            }
+                        ],
+                    },
                 },
                 {
                     "step": {"type": "collect_quhe", "exchange": "ALL", "kind": "basis", "priority": 40},
                     "status": "failed",
                     "error": "timeout",
-                    "coverage_diff": {"improved_cells": 0, "regressed_cells": 1, "overall_coverage_after": 70},
+                    "coverage_diff": {
+                        "improved_cells": 0,
+                        "regressed_cells": 1,
+                        "overall_coverage_after": 70,
+                        "changes": [
+                            {
+                                "exchange": "INE",
+                                "kind": "basis",
+                                "direction": "regressed",
+                                "before": {"status": "ok", "rows": 6},
+                                "after": {"status": "missing", "rows": 0},
+                                "row_delta": -6,
+                            }
+                        ],
+                    },
                 },
             ],
             "after_plan": {"summary": {"summary": "还剩 1 步。"}, "steps": [{}], "skipped": [{}, {}]},
@@ -54,7 +82,12 @@ def check() -> None:
         assert run["remaining_skipped"] == 2
         assert run["coverage_diff"]["improved_cells"] == 2
         assert run["coverage_diff"]["regressed_cells"] == 1
+        assert run["coverage_diff"]["changed_cells"] == 2
+        assert run["cell_changes"][0]["exchange"] == "DCE"
+        assert run["cell_changes"][0]["summary"] == "missing/0 → ok/24，行数 +24"
+        assert "改善 1 格" in run["change_summary"]
         assert run["executed"][0]["exchange"] == "DCE"
+        assert run["executed"][0]["changes"][0]["kind"] == "daily"
     finally:
         db.close()
 

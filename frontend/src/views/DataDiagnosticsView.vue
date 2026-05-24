@@ -23,6 +23,13 @@
         <span>回退 {{ operationResult.coverage_diff?.regressed_cells ?? 0 }}</span>
       </div>
       <div class="op-tail">{{ operationResult.note || operationResult.message || '-' }}</div>
+      <div v-if="operationResult.coverage_diff?.changes?.length" class="change-list compact">
+        <div v-for="change in operationResult.coverage_diff.changes.slice(0, 8)" :key="`op-${change.exchange}-${change.kind}`" class="change-row" :class="changeClass(change.direction)">
+          <b>{{ exchangeName(change.exchange) }} · {{ kindLabel(change.kind) }}</b>
+          <span>{{ statusLabel(change.before?.status) }} {{ change.before?.rows ?? 0 }} → {{ statusLabel(change.after?.status) }} {{ change.after?.rows ?? 0 }}</span>
+          <em>{{ Number(change.row_delta || 0) > 0 ? '+' : '' }}{{ change.row_delta || 0 }}</em>
+        </div>
+      </div>
     </SectionCard>
 
     <div class="kpi-row">
@@ -108,12 +115,20 @@
             </div>
             <em>改善 {{ run.improved_cells }} / 回退 {{ run.regressed_cells }}</em>
           </div>
-          <p>{{ run.message || run.after_summary || '-' }}</p>
+          <p>{{ run.change_summary || run.message || run.after_summary || '-' }}</p>
           <div class="run-metrics">
             <span>执行 {{ run.steps_total }} 步</span>
             <span>失败 {{ run.steps_failed }} 步</span>
+            <span>变化格子 {{ run.coverage_diff?.changed_cells || 0 }}</span>
             <span>剩余计划 {{ run.remaining_steps }}</span>
             <span>跳过 {{ run.remaining_skipped }}</span>
+          </div>
+          <div v-if="run.cell_changes?.length" class="change-list compact">
+            <div v-for="change in run.cell_changes.slice(0, 6)" :key="`${run.id}-${change.exchange}-${change.kind}`" class="change-row" :class="changeClass(change.direction)">
+              <b>{{ exchangeName(change.exchange) }} · {{ kindLabel(change.kind) }}</b>
+              <span>{{ statusLabel(change.before?.status) }} {{ change.before?.rows ?? 0 }} → {{ statusLabel(change.after?.status) }} {{ change.after?.rows ?? 0 }}</span>
+              <em>{{ Number(change.row_delta || 0) > 0 ? '+' : '' }}{{ change.row_delta || 0 }}</em>
+            </div>
           </div>
           <details>
             <summary>查看步骤</summary>
@@ -121,6 +136,13 @@
               <div v-for="step in run.executed" :key="`${run.id}-${step.type}-${step.exchange}-${step.kind}-${step.priority}`" class="run-step" :class="step.status === 'failed' ? 'bad' : 'ok'">
                 <b>{{ step.type }} · {{ exchangeName(step.exchange) }} · {{ kindLabel(step.kind) }}</b>
                 <span>{{ step.summary || step.error || '-' }}</span>
+                <div v-if="step.changes?.length" class="change-list">
+                  <div v-for="change in step.changes.slice(0, 4)" :key="`${run.id}-${step.type}-${change.exchange}-${change.kind}`" class="change-row" :class="changeClass(change.direction)">
+                    <b>{{ exchangeName(change.exchange) }} · {{ kindLabel(change.kind) }}</b>
+                    <span>{{ statusLabel(change.before?.status) }} {{ change.before?.rows ?? 0 }} → {{ statusLabel(change.after?.status) }} {{ change.after?.rows ?? 0 }}</span>
+                    <em>{{ Number(change.row_delta || 0) > 0 ? '+' : '' }}{{ change.row_delta || 0 }}</em>
+                  </div>
+                </div>
               </div>
             </div>
           </details>
@@ -283,6 +305,7 @@ function fmtNum(v) { const n = Number(v || 0); if (Math.abs(n) >= 10000) return 
 function fmtBytes(v) { const n = Number(v || 0); if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`; if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`; return `${n} B` }
 function fmtDelta(v) { const n = Number(v || 0); return n > 0 ? `+${n}%` : `${n}%` }
 function fmtTime(v) { return v ? String(v).replace('T', ' ').slice(0, 19) : '-' }
+function changeClass(direction) { return direction === 'improved' ? 'good' : direction === 'regressed' ? 'bad' : 'neutral' }
 
 async function resolveLatestDate() {
   const { data } = await api.get('/dataset/varieties/latest')
@@ -395,11 +418,31 @@ async function runRetryPlan() {
 
 function aggregateRunnerDiff(items) {
   const last = [...items].reverse().find(item => item.coverage_diff)?.coverage_diff || {}
+  const changes = aggregateCellChanges(items)
   return {
     ...last,
     improved_cells: items.reduce((sum, item) => sum + Number(item.coverage_diff?.improved_cells || 0), 0),
     regressed_cells: items.reduce((sum, item) => sum + Number(item.coverage_diff?.regressed_cells || 0), 0),
+    changed_cells: changes.length,
+    changes,
   }
+}
+
+function aggregateCellChanges(items) {
+  const merged = new Map()
+  for (const item of items || []) {
+    for (const change of item.coverage_diff?.changes || []) {
+      const key = `${change.exchange}-${change.kind}`
+      const existing = merged.get(key)
+      if (!existing) merged.set(key, { ...change, row_delta: Number(change.row_delta || 0) })
+      else {
+        existing.after = change.after || existing.after
+        existing.direction = change.direction || existing.direction
+        existing.row_delta = Number(existing.row_delta || 0) + Number(change.row_delta || 0)
+      }
+    }
+  }
+  return [...merged.values()].sort((a, b) => (a.direction === 'improved' ? 0 : a.direction === 'regressed' ? 1 : 2) - (b.direction === 'improved' ? 0 : b.direction === 'regressed' ? 1 : 2))
 }
 
 async function runRetryStep(step) {
@@ -537,9 +580,18 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .run-metrics span { background:#f8fafc; color:#64748b; border:1px solid #e2e8f0; border-radius:999px; padding:4px 7px; font-size:12px; font-weight:850; }
 .run-card details summary { cursor:pointer; color:#334155; font-weight:900; }
 .run-steps { display:grid; gap:7px; margin-top:8px; }
-.run-step { display:grid; gap:3px; padding:8px 10px; border-radius:10px; background:#fbfdff; border:1px solid #eef2f7; }
+.run-step { display:grid; gap:6px; padding:8px 10px; border-radius:10px; background:#fbfdff; border:1px solid #eef2f7; }
 .run-step.ok { border-left:4px solid #16a34a; } .run-step.bad { border-left:4px solid #dc2626; }
 .run-step span { color:#64748b; font-size:12px; line-height:1.45; word-break:break-word; }
+.change-list { display:grid; gap:6px; margin-top:4px; }
+.change-list.compact { margin-top:2px; }
+.change-row { display:grid; grid-template-columns:minmax(120px, 1fr) minmax(150px, 1.5fr) auto; gap:8px; align-items:center; padding:7px 9px; border-radius:10px; border:1px solid #e2e8f0; background:#f8fafc; font-size:12px; }
+.change-row b { color:#0f172a; }
+.change-row span { color:#64748b; }
+.change-row em { font-style:normal; font-weight:950; color:#334155; }
+.change-row.good { border-left:4px solid #16a34a; background:#f0fdf4; }
+.change-row.bad { border-left:4px solid #dc2626; background:#fff7f7; }
+.change-row.neutral { border-left:4px solid #94a3b8; }
 .skip-details { margin-top:12px; color:#64748b; }
 .skip-details summary { cursor:pointer; font-weight:900; color:#334155; }
 .skip-list { display:grid; gap:6px; margin-top:8px; font-size:12px; }
@@ -550,5 +602,5 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .replay-head { display:flex; justify-content:space-between; gap:12px; color:#334155; }
 .replay-stats span { background:#eef2ff; color:#3157d5; border:1px solid #dbe3ff; border-radius:999px; padding:5px 9px; font-weight:900; font-size:12px; }
 pre { margin-top:12px; max-height:360px; overflow:auto; background:#0f172a; color:#dbeafe; border-radius:12px; padding:12px; font-size:12px; }
-@media (max-width: 980px) { .kpi-row, .exchange-grid, .source-grid, .run-history { grid-template-columns:1fr; } .page-head, .head-actions, .source-health-head, .retry-head, .history-head { flex-direction:column; align-items:stretch; } }
+@media (max-width: 980px) { .kpi-row, .exchange-grid, .source-grid, .run-history, .change-row { grid-template-columns:1fr; } .page-head, .head-actions, .source-health-head, .retry-head, .history-head { flex-direction:column; align-items:stretch; } }
 </style>

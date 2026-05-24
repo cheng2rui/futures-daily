@@ -129,6 +129,11 @@
 - 新增 `GET /api/quality/retry-runs`，支持按 trade_date 查询最近执行记录。
 - 数据诊断页新增“自动补采历史”，任务页支持筛选和展开 retry_plan 任务。
 
+### v0.4.1：补采覆盖变化可追溯
+- retry history 聚合每次补采的格子级 coverage changes，保留 before/after 状态、行数和方向。
+- 数据诊断页“最近一次操作结果”和“自动补采历史”展示每个交易所/数据类型的覆盖状态变化。
+- 前端状态标签补齐 fallback / not_supported / event_calendar，诊断结果更易读。
+
 ---
 
 
