@@ -42,6 +42,9 @@ def check() -> None:
         assert ak["archives_count"] == 1
         assert ak["open_gaps"] == 1
         assert ak["latest_error"] == "empty seat rank"
+        assert ak["latest_error_category"]["code"] == "empty"
+        assert ak["error_summary"]["top_code"] == "empty"
+        assert ak["latest_runs"][0]["error_category"]["code"] in {"empty", "unknown"}
         assert 0 <= ak["score"] <= 100
     finally:
         db.close()

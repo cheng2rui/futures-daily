@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import CrawlerRun, DataGap, SourceFile
 from app.services.coverage_matrix import build_coverage_matrix
+from app.services.error_classifier import classify_record_error, summarize_categories
 from app.services.raw_archive import source_file_item
 
 WEAK_EXCHANGES = ("DCE", "INE")
@@ -41,6 +42,7 @@ def diagnose_exchange(db: Session, trade_date: str, exchange: str, coverage_row:
                 "message": cell.get("message") or "不适用",
                 "latest_run": None,
                 "latest_gap": None,
+                "error_category": classify_record_error(message=cell.get("message"), status=status, kind=kind),
                 "latest_archive": None,
             })
 
@@ -50,10 +52,12 @@ def diagnose_exchange(db: Session, trade_date: str, exchange: str, coverage_row:
     if exchange == "INE":
         actions.append({"type": "adapter", "kind": "seat_rank", "note": "INE 席位 adapter 未实现；若找到官方披露接口，可先接 raw archive，再接 parser replay。"})
 
+    category_summary = summarize_categories(issues)
     return {
         "exchange": exchange,
         "status": coverage_row.get("status") or "unknown",
         "summary": coverage_row.get("summary") or "暂无覆盖矩阵记录",
+        "error_summary": category_summary,
         "issues": issues,
         "actions": actions,
     }
@@ -63,11 +67,19 @@ def issue_item(db: Session, trade_date: str, exchange: str, kind: str, cell: dic
     run = latest_run(db, trade_date, exchange, kind)
     gap = latest_gap(db, trade_date, exchange, kind)
     archive = latest_archive(db, trade_date, exchange, kind)
+    category = classify_record_error(
+        error=(run.error if run else "") or (archive.error if archive else ""),
+        message=(gap.message if gap else "") or cell.get("message"),
+        status=cell.get("status"),
+        kind=kind,
+        source=(run.source if run else archive.source if archive else ""),
+    )
     return {
         "kind": kind,
         "status": cell.get("status"),
         "severity": "error" if kind in {"daily", "seat_rank"} and cell.get("status") == "failed" else "warning",
         "message": cell.get("message") or "数据缺失",
+        "error_category": category,
         "latest_run": run_item(run) if run else None,
         "latest_gap": gap_item(gap) if gap else None,
         "latest_archive": source_file_item(archive) if archive else None,
@@ -109,6 +121,7 @@ def run_item(row: CrawlerRun) -> dict[str, Any]:
         "rows": row.rows,
         "saved": row.saved,
         "error": row.error,
+        "error_category": classify_record_error(error=row.error, status=row.status, kind=row.kind, source=row.source),
         "started_at": row.started_at,
         "finished_at": row.finished_at,
     }

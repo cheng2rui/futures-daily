@@ -6,6 +6,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.models import CrawlerRun, DataGap, SourceFile
+from app.services.error_classifier import classify_record_error, summarize_categories
 from app.services.raw_archive import source_file_item
 from app.sources.registry import list_provider_capabilities
 
@@ -65,6 +66,17 @@ def source_health_item(db: Session, trade_date: str, source: str, provider_cap: 
     distinct_kinds = len({a.kind for a in archives})
     distinct_exchanges = len({a.exchange for a in archives})
     latest_error = next((r.error for r in runs if r.error), next((a.error for a in archives if a.error), ""))
+    latest_error_category = classify_record_error(error=latest_error, status="failed" if latest_error else "", source=source)
+    error_items = [
+        {"error_category": classify_record_error(error=r.error, status=r.status, kind=r.kind, source=r.source)}
+        for r in runs
+        if r.error or r.status == "failed"
+    ] + [
+        {"error_category": classify_record_error(error=a.error, status="failed" if a.error else "", kind=a.kind, source=a.source)}
+        for a in archives
+        if a.error
+    ]
+    error_summary = summarize_categories(error_items)
     success_rate = round(success_runs / total_runs * 100, 1) if total_runs else 0.0
 
     archive_score = min(20, archive_count * 2)
@@ -95,6 +107,8 @@ def source_health_item(db: Session, trade_date: str, source: str, provider_cap: 
         "open_gaps": open_gaps,
         "resolved_gaps": resolved_gaps,
         "latest_error": latest_error,
+        "latest_error_category": latest_error_category,
+        "error_summary": error_summary,
         "latest_runs": [run_item(r) for r in runs[:5]],
         "latest_archives": [source_file_item(a) for a in archives[:5]],
     }
@@ -156,6 +170,7 @@ def run_item(row: CrawlerRun) -> dict[str, Any]:
         "rows": row.rows,
         "saved": row.saved,
         "error": row.error,
+        "error_category": classify_record_error(error=row.error, status=row.status, kind=row.kind, source=row.source),
         "started_at": row.started_at,
         "finished_at": row.finished_at,
     }

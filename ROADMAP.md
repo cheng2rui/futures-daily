@@ -134,6 +134,11 @@
 - 数据诊断页“最近一次操作结果”和“自动补采历史”展示每个交易所/数据类型的覆盖状态变化。
 - 前端状态标签补齐 fallback / not_supported / event_calendar，诊断结果更易读。
 
+### v0.4.2：数据源失败原因归因
+- 新增 error classifier，将反爬/访问限制、网络超时、连接错误、空返回、parser 异常、adapter 未支持、鉴权问题统一分类。
+- source health 和 DCE/INE diagnostics 输出 error_category / error_summary，便于解释“为什么补不回来”。
+- 数据诊断页展示主要失败原因、原因解释和建议动作。
+
 ---
 
 

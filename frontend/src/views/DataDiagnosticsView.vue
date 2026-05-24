@@ -57,6 +57,10 @@
             <span>归档 {{ src.archives_count }}</span>
             <span>缺口 {{ src.open_gaps }}</span>
           </div>
+          <div v-if="src.error_summary?.top_code" class="source-cause">
+            <b>{{ src.error_summary.top_label }}</b>
+            <span>{{ src.latest_error_category?.suggestion || src.error_summary.summary }}</span>
+          </div>
           <div v-if="src.latest_error" class="source-error">{{ src.latest_error }}</div>
         </article>
       </div>
@@ -173,6 +177,9 @@
     <div class="exchange-grid">
       <SectionCard v-for="item in diagnostics" :key="item.exchange" :title="`${exchangeName(item.exchange)} 诊断`">
         <div class="diag-summary" :class="`diag-${item.status}`">{{ item.summary || statusLabel(item.status) }}</div>
+        <div v-if="item.error_summary?.top_code" class="diag-cause">
+          <b>{{ item.error_summary.summary }}</b>
+        </div>
         <div v-if="!item.issues?.length" class="empty-state small success">暂无明显问题。</div>
         <div v-else class="issue-list">
           <article v-for="issue in item.issues" :key="`${item.exchange}-${issue.kind}-${issue.status}`" class="issue-card" :class="`issue-${issue.severity}`">
@@ -181,6 +188,11 @@
               <span :class="`status-text-${issue.status}`">{{ statusLabel(issue.status) }}</span>
             </div>
             <p>{{ issue.message }}</p>
+            <div v-if="issue.error_category" class="issue-cause">
+              <b>{{ issue.error_category.label }}</b>
+              <span>{{ issue.error_category.reason }}</span>
+              <em>{{ issue.error_category.suggestion }}</em>
+            </div>
             <div class="issue-meta">
               <span>run: {{ issue.latest_run ? `${issue.latest_run.status} / saved ${issue.latest_run.saved}` : '-' }}</span>
               <span>gap: {{ issue.latest_gap ? `${issue.latest_gap.status} / ${issue.latest_gap.message}` : '-' }}</span>
@@ -531,6 +543,9 @@ onMounted(load)
 .source-card p { margin:0; color:#475569; line-height:1.45; font-size:13px; }
 .source-metrics { display:flex; flex-wrap:wrap; gap:6px; }
 .source-metrics span { background:#f8fafc; color:#64748b; border:1px solid #e2e8f0; border-radius:999px; padding:4px 7px; font-size:12px; font-weight:850; }
+.source-cause, .diag-cause, .issue-cause { display:grid; gap:3px; background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:7px 9px; font-size:12px; line-height:1.45; color:#9a3412; }
+.source-cause b, .diag-cause b, .issue-cause b { color:#7c2d12; }
+.issue-cause em { font-style:normal; color:#64748b; }
 .source-error { color:#be123c; background:#fff1f2; border:1px solid #fecdd3; border-radius:10px; padding:7px 9px; font-size:12px; line-height:1.4; }
 .matrix-table, .archive-table { width:100%; overflow:auto; }
 table { width:100%; min-width:860px; border-collapse:separate; border-spacing:0; font-size:13px; }
