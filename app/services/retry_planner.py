@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.services.coverage_matrix import build_coverage_matrix
+from app.services.error_classifier import classify_record_error
 from app.services.source_health import build_source_health
 
 CORE_KINDS = {"daily", "seat_rank"}
@@ -29,9 +30,11 @@ def build_retry_plan(db: Session, trade_date: str) -> dict[str, Any]:
                 skipped.append(skip_item(exchange, kind, cell, "not_supported"))
                 continue
             if kind in CORE_KINDS:
-                steps.append(core_step(trade_date, exchange, kind, cell, health_by_source))
+                item = core_step(trade_date, exchange, kind, cell, health_by_source)
+                (steps if item.get("executable") else skipped).append(item)
             elif kind in ENHANCEMENT_KINDS:
-                steps.append(enhancement_step(trade_date, exchange, kind, cell, health_by_source))
+                item = enhancement_step(trade_date, exchange, kind, cell, health_by_source)
+                (steps if item.get("executable") else skipped).append(item)
             elif kind == "archive_signal":
                 skipped.append(skip_item(exchange, kind, cell, "archive_dependency"))
 
@@ -52,11 +55,14 @@ def core_step(trade_date: str, exchange: str, kind: str, cell: dict[str, Any], h
     source = recommended_source(exchange, kind)
     source_health = health_by_source.get(source) or {}
     status = source_health.get("status") or "unknown"
+    category = step_error_category(source_health, cell, kind, source)
+    decision = planner_decision(category, kind, status)
     priority = 10 if kind == "daily" else 20
     if cell.get("status") == "failed":
         priority -= 3
     if status == "bad":
         priority += 6
+    priority += int(decision.get("priority_delta") or 0)
     return {
         "type": "recollect",
         "exchange": exchange,
@@ -64,10 +70,15 @@ def core_step(trade_date: str, exchange: str, kind: str, cell: dict[str, Any], h
         "source": source,
         "source_status": status,
         "priority": priority,
+        "executable": bool(decision["executable"]),
+        "decision": decision["action"],
+        "decision_label": decision["label"],
+        "error_category": category,
         "endpoint": f"POST /api/reports/{trade_date}/recollect?exchange={exchange}&kinds={kind}&rebuild=true",
         "reason": f"{exchange} {kind} 当前 {cell.get('status')}：{cell.get('message') or '数据缺失'}",
-        "expected_effect": "补齐核心覆盖并刷新日报" if kind == "daily" else "补齐席位覆盖；若源不可用会保留 data_gap",
-        "risk": risk_note(source, status, exchange, kind),
+        "expected_effect": decision.get("expected_effect") or ("补齐核心覆盖并刷新日报" if kind == "daily" else "补齐席位覆盖；若源不可用会保留 data_gap"),
+        "risk": decision.get("risk") or risk_note(source, status, exchange, kind),
+        "reason_code": decision.get("reason_code", "retryable"),
     }
 
 
@@ -75,9 +86,12 @@ def enhancement_step(trade_date: str, exchange: str, kind: str, cell: dict[str, 
     source = enhancement_source(kind)
     source_health = health_by_source.get(source) or {}
     status = source_health.get("status") or "unknown"
+    category = step_error_category(source_health, cell, kind, source)
+    decision = planner_decision(category, kind, status)
     priority = 40 if kind == "capital_flow" else 45
     if status == "bad":
         priority += 8
+    priority += int(decision.get("priority_delta") or 0)
     return {
         "type": "collect_quhe",
         "exchange": exchange,
@@ -85,10 +99,15 @@ def enhancement_step(trade_date: str, exchange: str, kind: str, cell: dict[str, 
         "source": source,
         "source_status": status,
         "priority": priority,
+        "executable": bool(decision["executable"]),
+        "decision": decision["action"],
+        "decision_label": decision["label"],
+        "error_category": category,
         "endpoint": f"POST /api/dataset/collect-quhe/{trade_date}",
         "reason": f"{exchange} {kind} 当前 {cell.get('status')}：{cell.get('message') or '增强数据缺失'}",
-        "expected_effect": "刷新曲合/官方增强数据后重新物化数据集",
-        "risk": risk_note(source, status, exchange, kind),
+        "expected_effect": decision.get("expected_effect") or "刷新曲合/官方增强数据后重新物化数据集",
+        "risk": decision.get("risk") or risk_note(source, status, exchange, kind),
+        "reason_code": decision.get("reason_code", "retryable"),
     }
 
 
@@ -109,6 +128,10 @@ def merge_enhancement_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]
             "source": "quheqihuo/official-fallback",
             "source_status": "bad" if bad_sources else "mixed",
             "priority": worst_priority,
+            "executable": True,
+            "decision": "retry_enhancement_bundle",
+            "decision_label": "刷新增强源包",
+            "error_category": summarize_child_categories(quhe_steps),
             "endpoint": quhe_steps[0]["endpoint"],
             "reason": f"增强数据缺口涉及 {len(exchanges)} 个交易所：{'、'.join(exchanges[:6])}",
             "expected_effect": "一次刷新资金流、基差、仓单、合约树、历史持仓和席位 fallback",
@@ -122,12 +145,17 @@ def skip_item(exchange: str, kind: str, cell: dict[str, Any], reason_code: str) 
     reason = cell.get("message") or "不建议自动重试"
     if reason_code == "archive_dependency":
         reason = "席位归档来自外部结构化归档/历史资产，不能通过普通采集直接补齐。"
+    category = classify_record_error(message=reason, status=cell.get("status"), kind=kind)
     return {
         "exchange": exchange,
         "kind": kind,
         "status": cell.get("status"),
         "reason_code": reason_code,
         "reason": reason,
+        "executable": False,
+        "decision": reason_code,
+        "decision_label": skip_label(reason_code),
+        "error_category": category,
     }
 
 
@@ -143,6 +171,86 @@ def enhancement_source(kind: str) -> str:
     if kind == "basis":
         return "quheqihuo/akshare_100ppi"
     return "quheqihuo"
+
+
+def step_error_category(source_health: dict[str, Any], cell: dict[str, Any], kind: str, source: str) -> dict[str, Any]:
+    latest = source_health.get("latest_error_category") if isinstance(source_health.get("latest_error_category"), dict) else None
+    if latest and latest.get("code") not in {"unknown", "missing_without_error"}:
+        return latest
+    return classify_record_error(message=cell.get("message"), status=cell.get("status"), kind=kind, source=source)
+
+
+def planner_decision(category: dict[str, Any], kind: str, source_status: str) -> dict[str, Any]:
+    code = category.get("code") or "unknown"
+    if code in {"adapter_not_supported", "auth"}:
+        return {
+            "executable": False,
+            "action": "connect_authorized_source" if code == "auth" else "connect_adapter",
+            "label": "接入授权源" if code == "auth" else "补 adapter",
+            "reason_code": code,
+            "expected_effect": "当前不能靠重试解决，需要补凭证/授权源或 adapter。",
+            "risk": category.get("suggestion") or "不执行自动重试，避免无效请求。",
+        }
+    if code == "parser":
+        return {
+            "executable": False,
+            "action": "parser_replay",
+            "label": "先做 Parser Replay",
+            "reason_code": "parser_replay",
+            "expected_effect": "先用 raw archive 重放定位字段变化，再修 parser。",
+            "risk": "直接重采大概率仍失败；应先修解析。",
+        }
+    if code == "anti_bot":
+        return {
+            "executable": True,
+            "action": "retry_with_backoff",
+            "label": "低频重试",
+            "priority_delta": 8,
+            "expected_effect": "低频补采并保留 raw archive；若仍触发反爬，转授权源/浏览器会话。",
+            "risk": category.get("suggestion") or "可能继续触发频控。",
+        }
+    if code in {"timeout", "network"}:
+        return {
+            "executable": True,
+            "action": "retry_network",
+            "label": "网络重试",
+            "priority_delta": -2,
+            "expected_effect": "网络类错误通常可重试恢复。",
+            "risk": category.get("suggestion") or "若连续失败需检查网络/代理/DNS。",
+        }
+    if code == "empty":
+        return {
+            "executable": True,
+            "action": "retry_verify_params",
+            "label": "校验参数后重试",
+            "priority_delta": 4,
+            "expected_effect": "再次采集并验证交易日/参数/品种映射是否导致空返回。",
+            "risk": category.get("suggestion") or "若源当天确无披露，重试不会改善。",
+        }
+    return {
+        "executable": True,
+        "action": "retry",
+        "label": "普通重试",
+        "priority_delta": 3 if source_status == "bad" else 0,
+        "expected_effect": "重新采集并用 coverage diff 判断是否改善。",
+        "risk": "错误信息不足，重试后需检查 raw archive 和 latest_run。",
+    }
+
+
+def summarize_child_categories(children: list[dict[str, Any]]) -> dict[str, Any]:
+    categories = [c.get("error_category") or {} for c in children]
+    actionable = [c for c in categories if c.get("code") not in {"unknown", "missing_without_error", None}]
+    return (actionable or categories or [{}])[0]
+
+
+def skip_label(reason_code: str) -> str:
+    return {
+        "not_supported": "跳过：不适用",
+        "archive_dependency": "跳过：依赖归档",
+        "adapter_not_supported": "跳过：补 adapter",
+        "auth": "跳过：需授权",
+        "parser_replay": "跳过：先 replay",
+    }.get(reason_code, "跳过")
 
 
 def risk_note(source: str, status: str, exchange: str, kind: str) -> str:

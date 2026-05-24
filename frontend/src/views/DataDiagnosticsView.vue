@@ -87,6 +87,8 @@
           <p>{{ step.reason }}</p>
           <div class="retry-meta">
             <span>源：{{ step.source }} / {{ step.source_status }}</span>
+            <span>决策：{{ step.decision_label || step.decision || '自动重试' }}</span>
+            <span v-if="step.error_category?.label">归因：{{ step.error_category.label }}</span>
             <span>预期：{{ step.expected_effect }}</span>
             <span>风险：{{ step.risk }}</span>
           </div>
@@ -96,7 +98,7 @@
       <details v-if="retryPlanSkipped.length" class="skip-details">
         <summary>查看跳过项 {{ retryPlanSkipped.length }} 个</summary>
         <div class="skip-list">
-          <span v-for="item in retryPlanSkipped" :key="`${item.exchange}-${item.kind}`">{{ exchangeName(item.exchange) }} · {{ kindLabel(item.kind) }}：{{ item.reason }}</span>
+          <span v-for="item in retryPlanSkipped" :key="`${item.exchange}-${item.kind}`">{{ exchangeName(item.exchange) }} · {{ kindLabel(item.kind) }}：{{ item.decision_label || item.reason_code }}｜{{ item.error_category?.label || '未归因' }}｜{{ item.reason }}</span>
         </div>
       </details>
     </SectionCard>

@@ -139,6 +139,11 @@
 - source health 和 DCE/INE diagnostics 输出 error_category / error_summary，便于解释“为什么补不回来”。
 - 数据诊断页展示主要失败原因、原因解释和建议动作。
 
+### v0.4.3：失败归因驱动 Retry Planner
+- Retry Planner 根据 error_category 决定普通重试、网络重试、低频重试、校验参数后重试、先 parser replay、补 adapter 或接授权源。
+- 非重试可解决的问题会进入 skipped，并带 decision / decision_label / error_category，避免 Retry Runner 做无效请求。
+- 数据诊断页的自动补采计划展示 planner 决策和失败归因。
+
 ---
 
 
