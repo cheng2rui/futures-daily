@@ -179,7 +179,7 @@
               <div v-for="item in visibleItems(abnormalCards, card, 3)" :key="`${item.exchange}-${item.symbol}`" class="abnormal-card">
                 <div class="abnormal-head">
                   <div><b>{{ item.name || item.symbol }}</b><span>{{ item.symbol }} · {{ exchangeName(item.exchange) }} · {{ item.sector || '-' }}</span></div>
-                  <em>{{ item.main_contract || '-' }}</em>
+                  <em>{{ contractDisplay(item.main_contract, item.symbol, { main: true }) }}</em>
                 </div>
                 <div class="card-section-label">结论</div>
                 <div class="abnormal-signal" :class="`bias-${item.bias || 'neutral'}`">{{ item.signal }}</div>
@@ -212,7 +212,7 @@
             <div v-if="!watchFocusRows.length" class="empty-state small">暂无自选品种。可在设置中批量导入 TA2609 / RU2609 / RB 等关注项。</div>
             <div v-else class="watch-focus-grid">
               <div v-for="item in watchFocusRows" :key="`${item.exchange}-${item.contract}`" class="watch-focus-card">
-                <div class="watch-focus-head"><b>{{ item.name || item.symbol }}</b><span>{{ item.contract || item.main_contract || item.symbol }}</span></div>
+                <div class="watch-focus-head"><b>{{ item.name || item.symbol }}</b><span>{{ contractDisplay(item.contract || item.main_contract, item.symbol, { main: !item.contract && !!item.main_contract }) }}</span></div>
                 <div class="watch-focus-price">{{ item.close ?? '-' }}</div>
                 <div class="watch-focus-meta">
                   <em :class="toneClass(item.change_pct)">{{ item.change_pct == null ? '-' : signedPct(item.change_pct) }}</em>
@@ -229,7 +229,7 @@
             <div v-else class="watch-digest-grid dashboard-inner-grid">
               <div v-for="item in visibleItems(watchDigestItems, card, 4)" :key="item.symbol" class="watch-digest-card" :class="`bias-${item.bias || 'neutral'}`">
                 <div class="watch-digest-head">
-                  <div><b>{{ item.name || item.symbol }}</b><span>{{ item.symbol }} · {{ item.main_contract || '-' }}</span></div>
+                  <div><b>{{ item.name || item.symbol }}</b><span>{{ item.symbol }} · {{ contractDisplay(item.main_contract, item.symbol, { main: true }) }}</span></div>
                   <em>{{ item.change_pct == null ? '-' : signedPct(item.change_pct) }}</em>
                 </div>
                 <div class="watch-digest-signal">{{ item.signal || item.summary }}</div>
@@ -295,11 +295,11 @@
                 <div class="term-head"><b>{{ varietyLabel(item.symbol) }}</b><span>{{ structureLabel(item.structure_type) }}</span></div>
                 <div class="term-summary">{{ item.summary }}</div>
                 <div class="term-spreads">
-                  <span v-if="item.main_second_spread">主次 {{ item.main_second_spread.left }}/{{ item.main_second_spread.right }}：{{ item.main_second_spread.value }} ({{ item.main_second_spread.pct }}%)</span>
-                  <span v-if="item.near_far_spread">近远 {{ item.near_far_spread.left }}/{{ item.near_far_spread.right }}：{{ item.near_far_spread.value }} ({{ item.near_far_spread.pct }}%)</span>
+                  <span v-if="item.main_second_spread">主次 {{ contractDisplay(item.main_second_spread.left, item.symbol) }}/{{ contractDisplay(item.main_second_spread.right, item.symbol) }}：{{ item.main_second_spread.value }} ({{ item.main_second_spread.pct }}%)</span>
+                  <span v-if="item.near_far_spread">近远 {{ contractDisplay(item.near_far_spread.left, item.symbol) }}/{{ contractDisplay(item.near_far_spread.right, item.symbol) }}：{{ item.near_far_spread.value }} ({{ item.near_far_spread.pct }}%)</span>
                 </div>
                 <div class="term-curve">
-                  <span v-for="p in (item.curve_points || []).slice(0, 6)" :key="p.contract">{{ p.contract }} {{ p.close }}</span>
+                  <span v-for="p in (item.curve_points || []).slice(0, 6)" :key="p.contract">{{ contractDisplay(p.contract, item.symbol) }} {{ p.close }}</span>
                 </div>
               </div>
             </div>
@@ -417,7 +417,7 @@ import BaseChart from '../components/BaseChart.vue'
 import MetricGrid from '../components/today/MetricGrid.vue'
 import TodayHero from '../components/today/TodayHero.vue'
 import SimpleTable from '../components/SimpleTable.vue'
-import { exchangeName, varietyName } from '../exchange.js'
+import { contractDisplay, exchangeName, varietyName } from '../exchange.js'
 import { statusLabel } from '../labels.js'
 
 const route = useRoute()
@@ -691,7 +691,7 @@ function onDashboardDrop(targetId) {
   draggingCardId.value = ''
   scheduleMasonryLayout()
 }
-function rows(items = []) { return (items || []).map(x => [exchangeName(x.exchange), x.contract || x.main_contract || x.symbol || '-', x.sector, x.close ?? '-', x.change_pct == null ? '-' : signedPct(x.change_pct)]) }
+function rows(items = []) { return (items || []).map(x => [exchangeName(x.exchange), contractDisplay(x.contract || x.main_contract || x.symbol, x.symbol, { main: !x.contract && !!x.main_contract }), x.sector, x.close ?? '-', x.change_pct == null ? '-' : signedPct(x.change_pct)]) }
 function varietyLabel(symbol) { const code = String(symbol || '').toUpperCase(); const name = varietyName(code); return name && name !== code ? `${name} ${code}` : code || '-' }
 function signedPct(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}%` : `${v}%` }
 function fmtSigned(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}` : `${v}` }

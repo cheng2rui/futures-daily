@@ -34,14 +34,14 @@ def build_term_structure(bars: list[DailyBar], limit: int = 12) -> dict[str, Any
             "symbol": symbol,
             "name": get_variety_name(symbol),
             "sector": sector_for(symbol),
-            "main_contract": main["contract"],
-            "second_contract": second["contract"] if second else "",
-            "near_contract": near["contract"],
-            "far_contract": far["contract"],
+            "main_contract": display_contract(main["contract"]),
+            "second_contract": display_contract(second["contract"]) if second else "",
+            "near_contract": display_contract(near["contract"]),
+            "far_contract": display_contract(far["contract"]),
             "main_second_spread": main_second_spread,
             "near_far_spread": near_far_spread,
             "structure_type": structure_type,
-            "curve_points": [{k: v for k, v in x.items() if k != "sort_key"} for x in curve[:16]],
+            "curve_points": [{**{k: v for k, v in x.items() if k != "sort_key"}, "contract": display_contract(x.get("contract"))} for x in curve[:16]],
             "signal_strength": signal_strength(main_second_spread, near_far_spread, curve),
         }
         item["summary"] = summarize_item(item)
@@ -85,13 +85,18 @@ def contract_sort_key(contract: str) -> tuple[int, str]:
     return (year * 100 + month, text)
 
 
+def display_contract(contract: str | None) -> str:
+    text = str(contract or "").upper()
+    return re.sub(r"^([A-Z_]+)(\d{3})$", lambda m: f"{m.group(1)}2{m.group(2)}", text)
+
+
 def spread(left: dict[str, Any] | None, right: dict[str, Any] | None) -> dict[str, Any] | None:
     if not left or not right or left.get("close") is None or right.get("close") is None:
         return None
     value = round(float(left["close"]) - float(right["close"]), 4)
     base = float(right["close"] or 0)
     pct = round(value / base * 100, 2) if base else None
-    return {"left": left.get("contract"), "right": right.get("contract"), "value": value, "pct": pct}
+    return {"left": display_contract(left.get("contract")), "right": display_contract(right.get("contract")), "value": value, "pct": pct}
 
 
 def classify_structure(curve: list[dict[str, Any]]) -> str:

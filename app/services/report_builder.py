@@ -26,7 +26,7 @@ from app.services.term_structure import build_term_structure
 
 from app.version import VERSION
 
-REPORT_SCHEMA_VERSION = 7
+REPORT_SCHEMA_VERSION = 8
 LIQUID_MIN_VOLUME = 1000
 LIQUID_MIN_OPEN_INTEREST = 1000
 

@@ -114,11 +114,20 @@ export function varietyName(symbol) {
   return VARIETY_NAMES[key] || symbol || '-'
 }
 
-export function contractName(contract, symbol = '') {
-  const text = String(contract || '')
+export function fullContractCode(contract) {
+  const text = String(contract || '').toUpperCase().trim()
   if (!text) return '-'
-  const match = text.match(/^([A-Za-z]+)/)
-  const code = String(symbol || (match ? match[1] : '')).toUpperCase()
-  const name = VARIETY_NAMES[code]
-  return name ? `${name} ${text}` : text
+  return text.replace(/^([A-Z_]+)(\d{3})$/, (_, prefix, ym) => `${prefix}2${ym}`)
+}
+
+export function contractDisplay(contract, symbol = '', options = {}) {
+  const code = fullContractCode(contract)
+  if (!code || code === '-') return '-'
+  const variety = varietyName(symbol)
+  const text = variety && variety !== symbol ? `${variety} ${code}` : code
+  return options.main ? `主力合约 ${text}` : text
+}
+
+export function contractName(contract, symbol = '') {
+  return contractDisplay(contract, symbol)
 }

@@ -5,14 +5,15 @@ from collections import defaultdict
 from app.models import DailyBar
 
 SECTOR_MAP = {
-    "黑色": {"RB", "HC", "I", "J", "JM", "SF", "SM", "SS"},
-    "有色": {"CU", "AL", "ZN", "PB", "NI", "SN", "AO", "BC"},
-    "化工": {"TA", "PX", "EG", "MA", "PP", "L", "V", "RU", "NR", "BU", "FU", "LU", "PF", "SA", "UR", "FG", "BR"},
-    "农产品": {"A", "B", "M", "Y", "P", "C", "CS", "JD", "LH", "CF", "SR", "OI", "RM", "AP", "CJ", "PK"},
-    "能源": {"SC", "LU", "FU", "BU", "PG", "EC"},
-    "贵金属": {"AU", "AG"},
+    "黑色": {"RB", "HC", "I", "J", "JM", "SF", "SM", "SS", "WR"},
+    "有色": {"CU", "AL", "ZN", "PB", "NI", "SN", "AO", "BC", "AD"},
+    "化工": {"TA", "PX", "EG", "MA", "PP", "L", "V", "RU", "NR", "BU", "FU", "LU", "PF", "SA", "UR", "FG", "BR", "BZ", "EB", "PS", "PR", "PL", "SH", "SP"},
+    "农产品": {"A", "B", "M", "Y", "P", "C", "CS", "JD", "LH", "CF", "SR", "OI", "RM", "AP", "CJ", "PK", "CY", "JR", "PM", "RI", "RR", "RS", "WH"},
+    "能源": {"SC", "SC_TAS", "PG", "EC", "ZC"},
+    "贵金属": {"AU", "AG", "PD", "PT"},
     "金融期货": {"IF", "IH", "IC", "IM", "T", "TF", "TS", "TL"},
-    "广期所重点": {"SI", "LC", "PS"},
+    "建材林木": {"BB", "FB", "LG", "OP"},
+    "广期所重点": {"SI", "LC"},
 }
 
 
