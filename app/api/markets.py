@@ -34,7 +34,7 @@ def _empty_intraday(collect_result: dict | None = None) -> dict:
         "watermark_id": 0,
         "disclaimer": "非实时行情，仅基于最近一次阶段性采集结果。",
         "collect": collect_result,
-        "market": {"contracts": 0, "main_contracts": 0, "up_count": 0, "down_count": 0, "flat_count": 0, "volume": 0, "open_interest": 0},
+        "market": {"contracts": 0, "main_contracts": 0, "up_count": 0, "down_count": 0, "flat_count": 0, "volume": 0, "volume_prev": 0, "volume_delta": 0, "volume_delta_pct": 0, "open_interest": 0},
         "rankings": {"gainers": [], "losers": [], "volume": []},
         "watch_symbols": [],
         "sectors": [],
@@ -172,6 +172,10 @@ def _build_intraday_snapshot(db: Session, selected_date: str | None, collect_res
     down = sum(1 for r in main_rows if (r.get("change_pct") or 0) < 0)
     flat = max(0, len(main_rows) - up - down)
     updated_at = max((b.id for b in bars), default=0)
+    total_volume = sum(float(r.get("volume") or 0) for r in rows)
+    prev_volume = previous_total_volume(db, selected_date)
+    volume_delta = total_volume - prev_volume if prev_volume is not None else None
+    volume_delta_pct = round(volume_delta / prev_volume * 100, 1) if volume_delta is not None and prev_volume else None
 
     return {
         "mode": "intraday",
@@ -186,7 +190,10 @@ def _build_intraday_snapshot(db: Session, selected_date: str | None, collect_res
             "up_count": up,
             "down_count": down,
             "flat_count": flat,
-            "volume": sum(float(r.get("volume") or 0) for r in rows),
+            "volume": total_volume,
+            "volume_prev": prev_volume,
+            "volume_delta": volume_delta,
+            "volume_delta_pct": volume_delta_pct,
             "open_interest": sum(float(r.get("open_interest") or 0) for r in rows),
         },
         "rankings": {
@@ -197,6 +204,14 @@ def _build_intraday_snapshot(db: Session, selected_date: str | None, collect_res
         "watch_symbols": [r for r in main_rows if ((r.get("exchange"), r.get("symbol")) in watch_keys or r.get("symbol") in watch_symbol_only or (r.get("contract") or "").upper() in watch_contracts)],
         "sectors": _sector_summary(main_rows),
     }
+
+
+def previous_total_volume(db: Session, trade_date: str) -> float | None:
+    prev_date = db.scalar(select(DailyBar.trade_date).where(DailyBar.trade_date < trade_date).group_by(DailyBar.trade_date).order_by(desc(DailyBar.trade_date)).limit(1))
+    if not prev_date:
+        return None
+    bars = db.scalars(select(DailyBar.volume).where(DailyBar.trade_date == prev_date)).all()
+    return sum(float(v or 0) for v in bars)
 
 
 @router.get("/bars")

@@ -21,7 +21,7 @@
     <div class="metric-card accent-blue">
       <div class="metric-label">成交量</div>
       <div class="metric-main">{{ fmtNum(dashboardMarket.volume) }}</div>
-      <div class="metric-sub">{{ activeDashboardMode === 'intraday' ? '最近一次更新' : '当日总成交' }}</div>
+      <div class="metric-sub volume-delta" :class="volumeDeltaClass">{{ volumeDeltaText }}</div>
     </div>
     <div class="metric-card accent-orange">
       <div class="metric-label">数据完整度</div>
@@ -47,6 +47,15 @@ const downCount = computed(() => Number(props.dashboardMarket.down_count || 0))
 const breadthTotal = computed(() => Math.max(1, upCount.value + downCount.value))
 const upRing = computed(() => ringDash(28, upCount.value / breadthTotal.value))
 const downRing = computed(() => ringDash(20, downCount.value / breadthTotal.value))
+const volumeDelta = computed(() => props.dashboardMarket.volume_delta == null ? null : Number(props.dashboardMarket.volume_delta || 0))
+const volumeDeltaPct = computed(() => props.dashboardMarket.volume_delta_pct == null ? null : Number(props.dashboardMarket.volume_delta_pct || 0))
+const volumeDeltaClass = computed(() => volumeDelta.value == null || volumeDelta.value === 0 ? 'tone-flat' : volumeDelta.value > 0 ? 'tone-up' : 'tone-down')
+const volumeDeltaText = computed(() => {
+  if (volumeDelta.value == null) return props.activeDashboardMode === 'intraday' ? '暂无前日对比' : '当日总成交'
+  const prefix = volumeDelta.value > 0 ? '较前日增加' : volumeDelta.value < 0 ? '较前日减少' : '较前日持平'
+  const pct = volumeDeltaPct.value == null ? '' : `（${volumeDeltaPct.value > 0 ? '+' : ''}${volumeDeltaPct.value}%）`
+  return `${prefix} ${fmtNum(Math.abs(volumeDelta.value))}${pct}`
+})
 
 function ringDash(radius, ratio) {
   const circumference = 2 * Math.PI * radius
@@ -72,6 +81,8 @@ function fmtNum(value) {
 .metric-label { color:#64748b; font-size:13px; font-weight:800; }
 .metric-main { margin-top:8px; color:#0f172a; font-size:30px; font-weight:900; }
 .metric-sub { margin-top:6px; color:#94a3b8; font-size:13px; }
+.volume-delta { font-weight:900; }
+.tone-up { color:#e03a3e; } .tone-down { color:#16a05d; } .tone-flat { color:#94a3b8; }
 .market-breadth-card { --accent:#e94560; }
 .breadth-label { color:#94a3b8; }
 .breadth-body { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:6px; min-height:58px; }

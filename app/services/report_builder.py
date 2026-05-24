@@ -50,6 +50,9 @@ def build_report(db: Session, trade_date: str) -> Report:
     down_count = sum(1 for _, chg in ranking_valid if chg < 0)
     turnover = sum((bar.turnover or 0) for bar in bars)
     volume = sum((bar.volume or 0) for bar in bars)
+    prev_volume = previous_total_volume(db, trade_date)
+    volume_delta = volume - prev_volume if prev_volume is not None else None
+    volume_delta_pct = round(volume_delta / prev_volume * 100, 1) if volume_delta is not None and prev_volume else None
 
     sector_bucket: dict[str, list[float]] = defaultdict(list)
     for bar, chg in ranking_valid:
@@ -162,7 +165,7 @@ def build_report(db: Session, trade_date: str) -> Report:
             "risk": risk,
             "summary": report_sections[0]["body"],
         },
-        "market": {"up_count": up_count, "down_count": down_count, "turnover": turnover, "volume": volume, "contracts": len(bars), "main_contracts": len(main_bars), "liquid_contracts": len(ranking_valid)},
+        "market": {"up_count": up_count, "down_count": down_count, "turnover": turnover, "volume": volume, "volume_prev": prev_volume, "volume_delta": volume_delta, "volume_delta_pct": volume_delta_pct, "contracts": len(bars), "main_contracts": len(main_bars), "liquid_contracts": len(ranking_valid)},
         "sectors": sectors,
         "rankings": {
             "gainers": [bar_item(b, c) for b, c in gainers],
@@ -227,6 +230,13 @@ def build_report(db: Session, trade_date: str) -> Report:
     db.commit()
     db.refresh(report)
     return report
+
+
+def previous_total_volume(db: Session, trade_date: str) -> float | None:
+    prev_date = db.scalar(select(DailyBar.trade_date).where(DailyBar.trade_date < trade_date).group_by(DailyBar.trade_date).order_by(desc(DailyBar.trade_date)).limit(1))
+    if not prev_date:
+        return None
+    return sum(float(v or 0) for v in db.scalars(select(DailyBar.volume).where(DailyBar.trade_date == prev_date)).all())
 
 
 def pick_main_bars(bars: list[DailyBar]) -> list[DailyBar]:
