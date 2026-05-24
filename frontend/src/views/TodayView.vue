@@ -133,6 +133,7 @@
         <article
           v-for="card in visibleDashboardCards"
           :key="card.id"
+          :ref="el => setDashboardCardRef(card.id, el)"
           class="dashboard-card"
           :class="[`card-${card.size || 'normal'}`, { dragging: draggingCardId === card.id }]"
           :draggable="dashboardEditing"
@@ -409,7 +410,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '../api.js'
 import BaseChart from '../components/BaseChart.vue'
@@ -466,6 +467,8 @@ const defaultDashboardCards = [
 const dashboardCards = ref(loadDashboardLayout())
 const hiddenDashboardCards = ref(loadHiddenDashboardCards())
 const dashboardEditing = ref(false)
+const dashboardCardEls = new Map()
+let dashboardResizeTimer = null
 const draggingCardId = ref('')
 const expandedDashboardCards = ref([])
 const activeDashboardMode = ref(loadDashboardMode())
@@ -634,6 +637,32 @@ function resizeDashboardCard(id, size) {
   const nextSize = ['compact', 'wide'].includes(size) ? size : 'normal'
   dashboardCards.value = dashboardCards.value.map(card => card.id === id ? { ...card, size: nextSize } : card)
   saveDashboardLayout()
+  scheduleMasonryLayout()
+}
+function setDashboardCardRef(id, el) {
+  if (el) dashboardCardEls.set(id, el)
+  else dashboardCardEls.delete(id)
+}
+function scheduleMasonryLayout() {
+  if (dashboardResizeTimer) cancelAnimationFrame(dashboardResizeTimer)
+  dashboardResizeTimer = requestAnimationFrame(() => {
+    dashboardResizeTimer = null
+    applyMasonryLayout()
+  })
+}
+function applyMasonryLayout() {
+  const rowHeight = 8
+  const gap = 18
+  for (const el of dashboardCardEls.values()) {
+    el.style.setProperty('--masonry-span', 'auto')
+  }
+  requestAnimationFrame(() => {
+    for (const el of dashboardCardEls.values()) {
+      const height = el.scrollHeight || el.getBoundingClientRect().height || 1
+      const span = Math.max(1, Math.ceil((height + gap) / (rowHeight + gap)))
+      el.style.setProperty('--masonry-span', String(span))
+    }
+  })
 }
 function isExpandableCard(id) { return ['brief', 'abnormal', 'watchDigest', 'news', 'tomorrow', 'quality', 'termStructure', 'industryChain'].includes(id) }
 function isCardExpanded(id) { return expandedDashboardCards.value.includes(id) }
@@ -660,6 +689,7 @@ function onDashboardDrop(targetId) {
   dashboardCards.value = cards
   saveDashboardLayout()
   draggingCardId.value = ''
+  scheduleMasonryLayout()
 }
 function rows(items = []) { return (items || []).map(x => [exchangeName(x.exchange), x.contract || x.main_contract || x.symbol || '-', x.sector, x.close ?? '-', x.change_pct == null ? '-' : signedPct(x.change_pct)]) }
 function varietyLabel(symbol) { const code = String(symbol || '').toUpperCase(); const name = varietyName(code); return name && name !== code ? `${name} ${code}` : code || '-' }
@@ -854,11 +884,22 @@ function startIntradayTimer() {
     intradayTimer = setInterval(() => loadIntraday(false), 5 * 60 * 1000)
   }
 }
-onMounted(async () => { await Promise.all([loadHealth(), load(), loadIntraday(false)]); startIntradayTimer() })
-onUnmounted(stopIntradayTimer)
-watch(() => route.query.date, async () => { await Promise.all([load(), loadIntraday(false)]) })
-watch(activeDashboardMode, mode => { if (mode === 'intraday' && !intraday.value.trade_date) loadIntraday(false); startIntradayTimer() })
+onMounted(async () => {
+  await Promise.all([loadHealth(), load(), loadIntraday(false)])
+  startIntradayTimer()
+  await nextTick()
+  scheduleMasonryLayout()
+  window.addEventListener('resize', scheduleMasonryLayout)
+})
+onUnmounted(() => {
+  stopIntradayTimer()
+  window.removeEventListener('resize', scheduleMasonryLayout)
+  if (dashboardResizeTimer) cancelAnimationFrame(dashboardResizeTimer)
+})
+watch(() => route.query.date, async () => { await Promise.all([load(), loadIntraday(false)]); await nextTick(); scheduleMasonryLayout() })
+watch(activeDashboardMode, async mode => { if (mode === 'intraday' && !intraday.value.trade_date) await loadIntraday(false); startIntradayTimer(); await nextTick(); scheduleMasonryLayout() })
 watch(intradayAutoRefresh, startIntradayTimer)
+watch([visibleDashboardCards, expandedDashboardCards], async () => { await nextTick(); scheduleMasonryLayout() }, { deep: true })
 </script>
 
 <style scoped>
@@ -915,8 +956,8 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .secondary.light { color:#3157d5; background:#f5f7ff; border-color:#dfe6ff; box-shadow:none; }
 .module-picker { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; padding:12px; border-radius:16px; background:#f8fafc; border:1px dashed #cbd5e1; }
 .module-picker label { display:flex; gap:6px; align-items:center; color:#475569; background:#fff; border:1px solid #e2e8f0; border-radius:999px; padding:7px 10px; font-size:13px; font-weight:800; cursor:pointer; }
-.dashboard-masonry { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:18px; align-items:start; }
-.dashboard-card { grid-column:span 6; width:100%; margin:0; break-inside:avoid; background:#fff; border:1px solid #e8edf5; border-radius:22px; padding:15px; box-shadow:0 10px 26px rgba(15,23,42,.06); transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease, opacity .18s ease; vertical-align:top; box-sizing:border-box; }
+.dashboard-masonry { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); grid-auto-rows:8px; grid-auto-flow:dense; gap:18px; align-items:start; }
+.dashboard-card { grid-column:span 6; grid-row:span var(--masonry-span, 1); width:100%; margin:0; break-inside:avoid; background:#fff; border:1px solid #e8edf5; border-radius:22px; padding:15px; box-shadow:0 10px 26px rgba(15,23,42,.06); transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease, opacity .18s ease; vertical-align:top; box-sizing:border-box; }
 .dashboard-card:hover { transform:translateY(-1px); box-shadow:0 14px 32px rgba(15,23,42,.08); }
 .dashboard-card.editing, .dashboard-masonry.editing .dashboard-card { cursor:grab; border-style:dashed; }
 .dashboard-card.dragging { opacity:.45; transform:scale(.985); border-color:#8ea2ff; }
