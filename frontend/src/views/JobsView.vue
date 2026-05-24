@@ -18,6 +18,7 @@
             <option value="refresh_intraday">更新行情</option>
             <option value="recollect_report">补齐数据</option>
             <option value="history_backfill">历史补采</option>
+            <option value="retry_plan">自动补采计划</option>
             <option value="push_report">日报推送</option>
           </select>
         </label>
@@ -74,6 +75,11 @@
                 <b>{{ channelLabel(x.channel) }}</b><span>{{ x.ok === true ? '成功' : x.skipped ? '跳过' : '失败' }}</span><small>{{ x.error || x.reason || x.body || '-' }}</small>
               </div>
             </div>
+            <div v-if="parsed(job)?.executed" class="exchange-results">
+              <div v-for="(x, idx) in parsed(job).executed || []" :key="`r-${job.id}-${idx}`" class="result-row" :class="x.status === 'failed' ? 'bad' : 'ok'">
+                <b>{{ x.step?.exchange || '-' }}</b><span>{{ retryStepLabel(x.step) }}</span><small>{{ x.error || x.summary || x.coverage_diff?.summary || '-' }}</small>
+              </div>
+            </div>
             <div v-if="parsed(job)?.dates" class="exchange-results">
               <div v-for="d in parsed(job).dates" :key="d" class="result-row ok">
                 <b>{{ d }}</b><span>历史补采</span><small>{{ backfillDayDetail(parsed(job), d) }}</small>
@@ -127,13 +133,14 @@ function duration(j) {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
 }
 function statusTone(status) { return status === 'success' ? 'ok' : status === 'failed' ? 'bad' : status === 'running' ? 'running' : 'partial' }
-function jobLabel(name) { return ({ generate_report: '生成日报', refresh_intraday: '更新行情', recollect_report: '补齐数据', history_backfill: '历史补采', push_report: '日报推送' })[name] || name }
+function jobLabel(name) { return ({ generate_report: '生成日报', refresh_intraday: '更新行情', recollect_report: '补齐数据', history_backfill: '历史补采', retry_plan: '自动补采计划', push_report: '日报推送' })[name] || name }
 function parsed(j) { try { return JSON.parse(j.result_json || '{}') } catch { return null } }
 function detail(j) {
   const data = parsed(j)
   if (!data) return String(j.result_json || '-').slice(0, 80)
   if (data.summary) return data.summary
   if (data.dispatch) return data.dispatch.map(channelResult).join(' / ')
+  if (j.name === 'retry_plan' && data.executed) return retryPlanDetail(data)
   if (j.name === 'history_backfill') return `补采 ${data.days || data.dates?.length || 0} 个交易日${data.failed?.length ? `｜异常 ${data.failed.length} 项` : ''}`
   if (j.name === 'refresh_intraday') return `拿到行情 ${savedRows(data.collect)} 行${data.snapshot?.updated_at ? `｜更新时间 ${data.snapshot.updated_at}` : ''}`
   if (j.name === 'recollect_report' || data.exchange || data.kinds) return recollectDetail(data)
@@ -151,7 +158,15 @@ function recollectDetail(data) {
   return parts.join(' / ') || '-'
 }
 function savedRows(result) { return (result?.results || []).reduce((sum, x) => sum + Number(x.saved || 0), 0) }
-function kindLabel(kind) { return ({ daily: '行情', seat_rank: '席位' })[kind] || kind }
+function kindLabel(kind) { return ({ daily: '行情', seat_rank: '席位', basis: '基差', warehouse_receipt: '仓单' })[kind] || kind }
+function retryStepLabel(step) { return step?.type === 'collect_quhe' ? '增强源刷新' : `${step?.type || '-'} ${kindLabel(step?.kind)}` }
+function retryPlanDetail(data) {
+  const executed = data.executed || []
+  const improved = executed.reduce((sum, x) => sum + Number(x.coverage_diff?.improved_cells || 0), 0)
+  const failed = executed.filter(x => x.status === 'failed').length
+  const remaining = data.after_plan?.steps?.length ?? 0
+  return `执行 ${executed.length} 步｜改善 ${improved} 项｜失败 ${failed} 步｜剩余 ${remaining} 步`
+}
 function channelResult(x) {
   const name = channelLabel(x.channel)
   if (x.ok === true) return `${name}：成功`

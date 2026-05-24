@@ -124,6 +124,11 @@
 - 新增 `POST /api/quality/retry-plan/{trade_date}/run`，支持 max_steps、stop_on_failure、rebuild 参数。
 - 数据诊断页新增“执行计划”，一次最多自动跑前三步，并展示 job、失败数和聚合改善结果。
 
+### v0.4.0：诊断面板收口 + 补采任务历史
+- 新增 retry run history 服务，从 JobRun 中提取自动补采执行历史、步骤结果、累计改善和剩余计划。
+- 新增 `GET /api/quality/retry-runs`，支持按 trade_date 查询最近执行记录。
+- 数据诊断页新增“自动补采历史”，任务页支持筛选和展开 retry_plan 任务。
+
 ---
 
 

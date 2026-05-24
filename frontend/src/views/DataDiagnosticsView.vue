@@ -90,6 +90,44 @@
       </details>
     </SectionCard>
 
+    <SectionCard title="自动补采历史" style="margin-top:16px">
+      <div class="history-head">
+        <div>
+          <b>{{ retryHistory.summary?.summary || '暂无自动补采执行历史。' }}</b>
+          <span>记录 Retry Runner 每次做了什么、改善了多少、还剩哪些缺口。</span>
+        </div>
+        <button class="secondary" :disabled="loadingHistory" @click="loadRetryHistory">{{ loadingHistory ? '刷新中...' : '刷新历史' }}</button>
+      </div>
+      <div v-if="!retryRuns.length" class="empty-state small">暂无执行历史。执行一次计划后会出现在这里。</div>
+      <div v-else class="run-history">
+        <article v-for="run in retryRuns" :key="run.id" class="run-card" :class="`run-${run.status}`">
+          <div class="run-top">
+            <div>
+              <b>#{{ run.id }} · {{ statusLabel(run.status) }}</b>
+              <span>{{ fmtTime(run.started_at) }} · {{ run.trade_date }}</span>
+            </div>
+            <em>改善 {{ run.improved_cells }} / 回退 {{ run.regressed_cells }}</em>
+          </div>
+          <p>{{ run.message || run.after_summary || '-' }}</p>
+          <div class="run-metrics">
+            <span>执行 {{ run.steps_total }} 步</span>
+            <span>失败 {{ run.steps_failed }} 步</span>
+            <span>剩余计划 {{ run.remaining_steps }}</span>
+            <span>跳过 {{ run.remaining_skipped }}</span>
+          </div>
+          <details>
+            <summary>查看步骤</summary>
+            <div class="run-steps">
+              <div v-for="step in run.executed" :key="`${run.id}-${step.type}-${step.exchange}-${step.kind}-${step.priority}`" class="run-step" :class="step.status === 'failed' ? 'bad' : 'ok'">
+                <b>{{ step.type }} · {{ exchangeName(step.exchange) }} · {{ kindLabel(step.kind) }}</b>
+                <span>{{ step.summary || step.error || '-' }}</span>
+              </div>
+            </div>
+          </details>
+        </article>
+      </div>
+    </SectionCard>
+
     <SectionCard title="覆盖矩阵" style="margin-top:16px">
       <div class="matrix-table">
         <table>
@@ -210,6 +248,7 @@ const tradeDateInput = ref('')
 const coverage = ref({ rows: [], kinds: [], summary: {} })
 const sourceHealth = ref({ sources: [], summary: {} })
 const retryPlan = ref({ steps: [], skipped: [], summary: {} })
+const retryHistory = ref({ runs: [], summary: {} })
 const diagnosticData = ref({ exchanges: [] })
 const archives = ref([])
 const archiveExchange = ref('')
@@ -218,6 +257,7 @@ const replayResult = ref(null)
 const replaying = ref(null)
 const runningAction = ref('')
 const loadingPlan = ref(false)
+const loadingHistory = ref(false)
 const operationResult = ref(null)
 const notice = ref('')
 const error = ref('')
@@ -230,6 +270,7 @@ const sourceHealthSummary = computed(() => sourceHealth.value.summary || {})
 const sourceHealthColor = computed(() => sourceHealthSummary.value.status === 'good' ? '#16c79a' : sourceHealthSummary.value.status === 'warn' ? '#f5a623' : '#e94560')
 const retryPlanSteps = computed(() => retryPlan.value.steps || [])
 const retryPlanSkipped = computed(() => retryPlan.value.skipped || [])
+const retryRuns = computed(() => retryHistory.value.runs || [])
 const diagnostics = computed(() => diagnosticData.value.exchanges || [])
 
 function cell(row, kind) { return row?.cells?.[kind] || { status: 'missing', rows: 0, message: '未采集' } }
@@ -241,6 +282,7 @@ function cellLabel(c) {
 function fmtNum(v) { const n = Number(v || 0); if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`; return String(Math.round(n)) }
 function fmtBytes(v) { const n = Number(v || 0); if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`; if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`; return `${n} B` }
 function fmtDelta(v) { const n = Number(v || 0); return n > 0 ? `+${n}%` : `${n}%` }
+function fmtTime(v) { return v ? String(v).replace('T', ' ').slice(0, 19) : '-' }
 
 async function resolveLatestDate() {
   const { data } = await api.get('/dataset/varieties/latest')
@@ -266,11 +308,22 @@ async function load() {
     sourceHealth.value = healthResp.data || { sources: [], summary: {} }
     retryPlan.value = planResp.data || { steps: [], skipped: [], summary: {} }
     diagnosticData.value = diagResp.data || { exchanges: [] }
-    await loadArchives()
+    await Promise.all([loadArchives(), loadRetryHistory()])
   } catch (e) {
     error.value = e?.response?.data?.detail || e?.message || '加载失败'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadRetryHistory() {
+  if (!tradeDate.value) return
+  loadingHistory.value = true
+  try {
+    const { data } = await api.get('/quality/retry-runs', { params: { trade_date: tradeDate.value, limit: 12 } })
+    retryHistory.value = data || { runs: [], summary: {} }
+  } finally {
+    loadingHistory.value = false
   }
 }
 
@@ -469,6 +522,24 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .retry-top em { font-style:normal; color:#b45309; background:#fff7ed; border:1px solid #fed7aa; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:950; }
 .retry-step p { margin:0; color:#475569; line-height:1.5; }
 .retry-meta { display:grid; gap:5px; color:#64748b; font-size:12px; }
+.history-head { display:flex; justify-content:space-between; gap:12px; align-items:center; color:#334155; margin-bottom:12px; }
+.history-head b { display:block; color:#0f172a; }
+.history-head span { display:block; margin-top:4px; color:#64748b; font-size:13px; }
+.run-history { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+.run-card { border:1px solid #e8edf5; border-radius:14px; padding:13px; background:#fff; display:grid; gap:9px; }
+.run-success { border-left:5px solid #16a34a; } .run-partial { border-left:5px solid #f59e0b; } .run-failed { border-left:5px solid #dc2626; } .run-running { border-left:5px solid #3f5efb; }
+.run-top { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+.run-top b { display:block; color:#0f172a; }
+.run-top span { display:block; margin-top:3px; color:#94a3b8; font-size:12px; }
+.run-top em { font-style:normal; color:#3157d5; background:#eef2ff; border:1px solid #dbe3ff; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:950; white-space:nowrap; }
+.run-card p { margin:0; color:#475569; line-height:1.45; }
+.run-metrics { display:flex; flex-wrap:wrap; gap:6px; }
+.run-metrics span { background:#f8fafc; color:#64748b; border:1px solid #e2e8f0; border-radius:999px; padding:4px 7px; font-size:12px; font-weight:850; }
+.run-card details summary { cursor:pointer; color:#334155; font-weight:900; }
+.run-steps { display:grid; gap:7px; margin-top:8px; }
+.run-step { display:grid; gap:3px; padding:8px 10px; border-radius:10px; background:#fbfdff; border:1px solid #eef2f7; }
+.run-step.ok { border-left:4px solid #16a34a; } .run-step.bad { border-left:4px solid #dc2626; }
+.run-step span { color:#64748b; font-size:12px; line-height:1.45; word-break:break-word; }
 .skip-details { margin-top:12px; color:#64748b; }
 .skip-details summary { cursor:pointer; font-weight:900; color:#334155; }
 .skip-list { display:grid; gap:6px; margin-top:8px; font-size:12px; }
@@ -479,5 +550,5 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .replay-head { display:flex; justify-content:space-between; gap:12px; color:#334155; }
 .replay-stats span { background:#eef2ff; color:#3157d5; border:1px solid #dbe3ff; border-radius:999px; padding:5px 9px; font-weight:900; font-size:12px; }
 pre { margin-top:12px; max-height:360px; overflow:auto; background:#0f172a; color:#dbeafe; border-radius:12px; padding:12px; font-size:12px; }
-@media (max-width: 980px) { .kpi-row, .exchange-grid, .source-grid { grid-template-columns:1fr; } .page-head, .head-actions, .source-health-head, .retry-head { flex-direction:column; align-items:stretch; } }
+@media (max-width: 980px) { .kpi-row, .exchange-grid, .source-grid, .run-history { grid-template-columns:1fr; } .page-head, .head-actions, .source-health-head, .retry-head, .history-head { flex-direction:column; align-items:stretch; } }
 </style>

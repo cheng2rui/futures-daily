@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.services.coverage_matrix import build_coverage_matrix
 from app.services.data_quality import build_data_quality
+from app.services.retry_history import list_retry_runs
 from app.services.retry_planner import build_retry_plan
 from app.services.retry_runner import run_retry_plan
 from app.services.source_diagnostics import diagnose_weak_sources
@@ -34,6 +35,12 @@ def get_source_health(trade_date: str, db: Session = Depends(get_db)):
 @router.get("/retry-plan/{trade_date}")
 def get_retry_plan(trade_date: str, db: Session = Depends(get_db)):
     return build_retry_plan(db, normalize_trade_date(trade_date))
+
+
+@router.get("/retry-runs")
+def get_retry_runs(trade_date: str | None = None, limit: int = 20, db: Session = Depends(get_db)):
+    normalized = normalize_trade_date(trade_date) if trade_date else None
+    return list_retry_runs(db, normalized, limit=limit)
 
 
 @router.post("/retry-plan/{trade_date}/run")
