@@ -9,7 +9,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Contract, DailyBar, JobRun, WatchSymbol
+from app.models import CapitalFlowDaily, Contract, DailyBar, JobRun, WatchSymbol
 from app.metadata.variety_meta import get_variety_name
 from app.services.collector import collect_daily_market
 from app.services.structure import sector_for
@@ -34,7 +34,7 @@ def _empty_intraday(collect_result: dict | None = None) -> dict:
         "watermark_id": 0,
         "disclaimer": "非实时行情，仅基于最近一次阶段性采集结果。",
         "collect": collect_result,
-        "market": {"contracts": 0, "main_contracts": 0, "up_count": 0, "down_count": 0, "flat_count": 0, "volume": 0, "volume_prev": 0, "volume_delta": 0, "volume_delta_pct": 0, "open_interest": 0},
+        "market": {"contracts": 0, "main_contracts": 0, "up_count": 0, "down_count": 0, "flat_count": 0, "volume": 0, "volume_prev": 0, "volume_delta": 0, "volume_delta_pct": 0, "open_interest": 0, "turnover": 0, "capital_flow_amount": 0, "capital_inflow_amount": 0, "capital_outflow_amount": 0},
         "rankings": {"gainers": [], "losers": [], "volume": []},
         "watch_symbols": [],
         "sectors": [],
@@ -173,6 +173,11 @@ def _build_intraday_snapshot(db: Session, selected_date: str | None, collect_res
     flat = max(0, len(main_rows) - up - down)
     updated_at = max((b.id for b in bars), default=0)
     total_volume = sum(float(r.get("volume") or 0) for r in rows)
+    total_turnover = sum(float(r.get("turnover") or 0) for r in rows)
+    capital_flow_rows = list(db.scalars(select(CapitalFlowDaily).where(CapitalFlowDaily.trade_date == selected_date)))
+    capital_flow_amount = sum(float(row.amount or 0) for row in capital_flow_rows)
+    capital_inflow_amount = sum(float(row.amount or 0) for row in capital_flow_rows if (row.amount or 0) > 0)
+    capital_outflow_amount = sum(float(row.amount or 0) for row in capital_flow_rows if (row.amount or 0) < 0)
     prev_volume = previous_total_volume(db, selected_date)
     volume_delta = total_volume - prev_volume if prev_volume is not None else None
     volume_delta_pct = round(volume_delta / prev_volume * 100, 1) if volume_delta is not None and prev_volume else None
@@ -194,6 +199,10 @@ def _build_intraday_snapshot(db: Session, selected_date: str | None, collect_res
             "volume_prev": prev_volume,
             "volume_delta": volume_delta,
             "volume_delta_pct": volume_delta_pct,
+            "turnover": total_turnover,
+            "capital_flow_amount": capital_flow_amount,
+            "capital_inflow_amount": capital_inflow_amount,
+            "capital_outflow_amount": capital_outflow_amount,
             "open_interest": sum(float(r.get("open_interest") or 0) for r in rows),
         },
         "rankings": {

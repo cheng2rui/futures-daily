@@ -148,6 +148,11 @@
             </div>
             <div class="card-head-actions">
               <button v-if="isExpandableCard(card.id)" class="expand-card" @click="toggleExpandCard(card.id)">{{ isCardExpanded(card.id) ? '收起' : '展开' }}</button>
+              <div v-if="dashboardEditing" class="size-toggle" aria-label="调整卡片大小">
+                <button :class="{ active: card.size === 'compact' }" title="小卡片" @click="resizeDashboardCard(card.id, 'compact')">小</button>
+                <button :class="{ active: !card.size || card.size === 'normal' || card.size === 'chart' }" title="标准卡片" @click="resizeDashboardCard(card.id, 'normal')">中</button>
+                <button :class="{ active: card.size === 'wide' }" title="宽卡片" @click="resizeDashboardCard(card.id, 'wide')">宽</button>
+              </div>
               <button v-if="dashboardEditing" class="hide-card" title="隐藏模块" @click="toggleDashboardCard(card.id)">×</button>
             </div>
           </div>
@@ -286,7 +291,7 @@
             <div v-if="!termStructureItems.length" class="empty-state small">暂无足够合约曲线数据。</div>
             <div v-else class="term-grid dashboard-inner-grid">
               <div v-for="item in visibleItems(termStructureItems, card, 4)" :key="`${item.exchange}-${item.symbol}`" class="term-card">
-                <div class="term-head"><b>{{ item.symbol }}</b><span>{{ structureLabel(item.structure_type) }}</span></div>
+                <div class="term-head"><b>{{ varietyLabel(item.symbol) }}</b><span>{{ structureLabel(item.structure_type) }}</span></div>
                 <div class="term-summary">{{ item.summary }}</div>
                 <div class="term-spreads">
                   <span v-if="item.main_second_spread">主次 {{ item.main_second_spread.left }}/{{ item.main_second_spread.right }}：{{ item.main_second_spread.value }} ({{ item.main_second_spread.pct }}%)</span>
@@ -411,7 +416,7 @@ import BaseChart from '../components/BaseChart.vue'
 import MetricGrid from '../components/today/MetricGrid.vue'
 import TodayHero from '../components/today/TodayHero.vue'
 import SimpleTable from '../components/SimpleTable.vue'
-import { contractName, exchangeName } from '../exchange.js'
+import { exchangeName, varietyName } from '../exchange.js'
 import { statusLabel } from '../labels.js'
 
 const route = useRoute()
@@ -433,7 +438,7 @@ const intraday = ref(emptyIntraday())
 const intradayLoading = ref(false)
 const intradayAutoRefresh = ref(false)
 let intradayTimer = null
-const rankColumns = ['交易所', '品种', '合约', '板块', '收盘', '涨跌幅']
+const rankColumns = ['交易所', '合约', '板块', '收盘', '涨跌幅']
 const DASHBOARD_LAYOUT_KEY = 'futures-daily.today.dashboard.v1'
 const DASHBOARD_MODE_KEY = 'futures-daily.today.dashboard.mode.v1'
 const defaultDashboardCards = [
@@ -576,9 +581,11 @@ function loadDashboardLayout() {
   try {
     const saved = JSON.parse(localStorage.getItem(DASHBOARD_LAYOUT_KEY) || '{}')
     const order = Array.isArray(saved.order) ? saved.order : []
-    const byId = new Map(defaultDashboardCards.map(card => [card.id, card]))
+    const sizes = saved.sizes && typeof saved.sizes === 'object' ? saved.sizes : {}
+    const applySavedSize = card => ({ ...card, size: ['compact', 'normal', 'wide', 'chart'].includes(sizes[card.id]) ? sizes[card.id] : card.size })
+    const byId = new Map(defaultDashboardCards.map(card => [card.id, applySavedSize(card)]))
     const ordered = order.map(id => byId.get(id)).filter(Boolean)
-    const missing = defaultDashboardCards.filter(card => !order.includes(card.id))
+    const missing = defaultDashboardCards.filter(card => !order.includes(card.id)).map(applySavedSize)
     return [...ordered, ...missing]
   } catch {
     return [...defaultDashboardCards]
@@ -601,7 +608,11 @@ function loadDashboardMode() {
   }
 }
 function saveDashboardLayout() {
-  localStorage.setItem(DASHBOARD_LAYOUT_KEY, JSON.stringify({ order: dashboardCards.value.map(card => card.id), hidden: hiddenDashboardCards.value }))
+  localStorage.setItem(DASHBOARD_LAYOUT_KEY, JSON.stringify({
+    order: dashboardCards.value.map(card => card.id),
+    hidden: hiddenDashboardCards.value,
+    sizes: Object.fromEntries(dashboardCards.value.map(card => [card.id, card.size || 'normal'])),
+  }))
   localStorage.setItem(DASHBOARD_MODE_KEY, activeDashboardMode.value)
 }
 function setDashboardMode(mode) {
@@ -617,6 +628,11 @@ function toggleDashboardCard(id) {
   hiddenDashboardCards.value = hiddenDashboardCards.value.includes(id)
     ? hiddenDashboardCards.value.filter(x => x !== id)
     : [...hiddenDashboardCards.value, id]
+  saveDashboardLayout()
+}
+function resizeDashboardCard(id, size) {
+  const nextSize = ['compact', 'wide'].includes(size) ? size : 'normal'
+  dashboardCards.value = dashboardCards.value.map(card => card.id === id ? { ...card, size: nextSize } : card)
   saveDashboardLayout()
 }
 function isExpandableCard(id) { return ['brief', 'abnormal', 'watchDigest', 'news', 'tomorrow', 'quality', 'termStructure', 'industryChain'].includes(id) }
@@ -645,7 +661,8 @@ function onDashboardDrop(targetId) {
   saveDashboardLayout()
   draggingCardId.value = ''
 }
-function rows(items = []) { return (items || []).map(x => [exchangeName(x.exchange), x.symbol, contractName(x.contract, x.symbol), x.sector, x.close ?? '-', x.change_pct == null ? '-' : signedPct(x.change_pct)]) }
+function rows(items = []) { return (items || []).map(x => [exchangeName(x.exchange), x.contract || x.main_contract || x.symbol || '-', x.sector, x.close ?? '-', x.change_pct == null ? '-' : signedPct(x.change_pct)]) }
+function varietyLabel(symbol) { const code = String(symbol || '').toUpperCase(); const name = varietyName(code); return name && name !== code ? `${name} ${code}` : code || '-' }
 function signedPct(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}%` : `${v}%` }
 function fmtSigned(v) { if (v == null) return '-'; const n = Number(v); return Number.isFinite(n) && n > 0 ? `+${n}` : `${v}` }
 function fmtNum(value) { if (value == null) return '-'; const n = Number(value); if (!Number.isFinite(n)) return value; if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(2)}亿`; if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`; return n.toFixed(0) }
@@ -898,8 +915,8 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .secondary.light { color:#3157d5; background:#f5f7ff; border-color:#dfe6ff; box-shadow:none; }
 .module-picker { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; padding:12px; border-radius:16px; background:#f8fafc; border:1px dashed #cbd5e1; }
 .module-picker label { display:flex; gap:6px; align-items:center; color:#475569; background:#fff; border:1px solid #e2e8f0; border-radius:999px; padding:7px 10px; font-size:13px; font-weight:800; cursor:pointer; }
-.dashboard-masonry { column-count:2; column-gap:18px; }
-.dashboard-card { display:inline-block; width:100%; margin:0 0 18px; break-inside:avoid; background:#fff; border:1px solid #e8edf5; border-radius:22px; padding:15px; box-shadow:0 10px 26px rgba(15,23,42,.06); transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease, opacity .18s ease; vertical-align:top; }
+.dashboard-masonry { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:18px; align-items:start; }
+.dashboard-card { grid-column:span 6; width:100%; margin:0; break-inside:avoid; background:#fff; border:1px solid #e8edf5; border-radius:22px; padding:15px; box-shadow:0 10px 26px rgba(15,23,42,.06); transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease, opacity .18s ease; vertical-align:top; box-sizing:border-box; }
 .dashboard-card:hover { transform:translateY(-1px); box-shadow:0 14px 32px rgba(15,23,42,.08); }
 .dashboard-card.editing, .dashboard-masonry.editing .dashboard-card { cursor:grab; border-style:dashed; }
 .dashboard-card.dragging { opacity:.45; transform:scale(.985); border-color:#8ea2ff; }
@@ -910,8 +927,13 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .drag-handle { color:#94a3b8; letter-spacing:-4px; margin-right:9px; cursor:grab; user-select:none; }
 .hide-card { width:26px; height:26px; display:grid; place-items:center; border:0; border-radius:999px; background:#f1f5f9; color:#64748b; cursor:pointer; font-size:18px; line-height:1; }
 .hide-card:hover { background:#ffe4e8; color:#d93655; }
+.size-toggle { display:flex; gap:3px; padding:3px; border-radius:999px; background:#f8fafc; border:1px solid #e2e8f0; }
+.size-toggle button { border:0; border-radius:999px; padding:4px 7px; background:transparent; color:#64748b; font-size:12px; font-weight:950; cursor:pointer; }
+.size-toggle button.active { color:#fff; background:#3f5efb; }
 .dashboard-inner-grid { grid-template-columns:1fr; gap:9px; }
-.card-wide { column-span:all; }
+.card-compact { grid-column:span 4; }
+.card-normal, .card-chart { grid-column:span 6; }
+.card-wide { grid-column:1 / -1; }
 .card-chart { min-height:310px; }
 .dashboard-card .simple-table { max-height:360px; overflow:auto; }
 .dashboard-card .positioning { margin-bottom:10px; padding:9px 11px; font-size:13px; line-height:1.55; }
@@ -1061,6 +1083,6 @@ watch(intradayAutoRefresh, startIntradayTimer)
 .empty-state { padding:28px; text-align:center; color:#888; background:#fafafa; border-radius:14px; }
 .empty-state.large { margin:18px 0; padding:48px; }
 .empty-state.small { padding:18px; }
-@media (max-width:1100px) { .daily-workbench { grid-template-columns:1fr 1fr; } .dashboard-masonry { column-count:2; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr 1fr; } }
-@media (max-width:760px) { .daily-workbench { grid-template-columns:1fr; } .ask-head { flex-direction:column; align-items:stretch; } .dashboard-toolbar { flex-direction:column; align-items:stretch; } .dashboard-masonry { column-count:1; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr; } }
+@media (max-width:1100px) { .daily-workbench { grid-template-columns:1fr 1fr; } .dashboard-card, .card-compact, .card-normal, .card-chart { grid-column:span 6; } .card-wide { grid-column:1 / -1; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr 1fr; } }
+@media (max-width:760px) { .daily-workbench { grid-template-columns:1fr; } .ask-head { flex-direction:column; align-items:stretch; } .dashboard-toolbar { flex-direction:column; align-items:stretch; } .dashboard-card, .card-compact, .card-normal, .card-chart, .card-wide { grid-column:1 / -1; } .layout-grid, .layout-grid.three, .chart-grid, .brief-bullets, .abnormal-grid, .watch-digest-grid, .watch-focus-grid { grid-template-columns:1fr; } }
 </style>

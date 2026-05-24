@@ -4,6 +4,7 @@ import re
 from collections import defaultdict
 from typing import Any
 
+from app.metadata.variety_meta import get_variety_name
 from app.models import DailyBar
 from app.services.structure import pct_change, sector_for
 
@@ -31,6 +32,7 @@ def build_term_structure(bars: list[DailyBar], limit: int = 12) -> dict[str, Any
         item = {
             "exchange": exchange,
             "symbol": symbol,
+            "name": get_variety_name(symbol),
             "sector": sector_for(symbol),
             "main_contract": main["contract"],
             "second_contract": second["contract"] if second else "",
@@ -133,4 +135,4 @@ def summarize_digest(items: list[dict[str, Any]]) -> str:
     if not items:
         return "暂无足够合约曲线数据。"
     top = items[:3]
-    return "；".join(f"{x.get('symbol')} {x.get('summary')}" for x in top)
+    return "；".join(f"{x.get('name') or x.get('symbol')} {x.get('symbol')} {x.get('summary')}" for x in top)

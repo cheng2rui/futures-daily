@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.metadata.contract_specs import get_point_value
 from app.metadata.variety_meta import get_exchange_code, get_variety_name
-from app.models import DailyBar, Report, SeatRankRow, WatchSymbol, SeatWatchlist
+from app.models import CapitalFlowDaily, DailyBar, Report, SeatRankRow, WatchSymbol, SeatWatchlist
 from app.services.data_mart import build_variety_dataset, materialize_variety_dataset
 from app.services.coverage_matrix import build_coverage_matrix
 from app.services.data_quality import build_data_quality
@@ -26,7 +26,7 @@ from app.services.term_structure import build_term_structure
 
 from app.version import VERSION
 
-REPORT_SCHEMA_VERSION = 6
+REPORT_SCHEMA_VERSION = 7
 LIQUID_MIN_VOLUME = 1000
 LIQUID_MIN_OPEN_INTEREST = 1000
 
@@ -113,6 +113,10 @@ def build_report(db: Session, trade_date: str) -> Report:
     event_calendar = build_event_calendar(trade_date)
     seat_archive = load_archive_summary(trade_date)
     dataset = build_variety_dataset(db, trade_date)
+    capital_flow_rows = list(db.scalars(select(CapitalFlowDaily).where(CapitalFlowDaily.trade_date == trade_date)))
+    capital_flow_amount = sum(float(row.amount or 0) for row in capital_flow_rows)
+    capital_inflow_amount = sum(float(row.amount or 0) for row in capital_flow_rows if (row.amount or 0) > 0)
+    capital_outflow_amount = sum(float(row.amount or 0) for row in capital_flow_rows if (row.amount or 0) < 0)
     materialize_variety_dataset(db, trade_date)
     coverage_matrix = build_coverage_matrix(db, trade_date, sync_gaps=True)
     data_quality["coverage_matrix"] = coverage_matrix
@@ -165,7 +169,21 @@ def build_report(db: Session, trade_date: str) -> Report:
             "risk": risk,
             "summary": report_sections[0]["body"],
         },
-        "market": {"up_count": up_count, "down_count": down_count, "turnover": turnover, "volume": volume, "volume_prev": prev_volume, "volume_delta": volume_delta, "volume_delta_pct": volume_delta_pct, "contracts": len(bars), "main_contracts": len(main_bars), "liquid_contracts": len(ranking_valid)},
+        "market": {
+            "up_count": up_count,
+            "down_count": down_count,
+            "turnover": turnover,
+            "volume": volume,
+            "volume_prev": prev_volume,
+            "volume_delta": volume_delta,
+            "volume_delta_pct": volume_delta_pct,
+            "capital_flow_amount": capital_flow_amount,
+            "capital_inflow_amount": capital_inflow_amount,
+            "capital_outflow_amount": capital_outflow_amount,
+            "contracts": len(bars),
+            "main_contracts": len(main_bars),
+            "liquid_contracts": len(ranking_valid),
+        },
         "sectors": sectors,
         "rankings": {
             "gainers": [bar_item(b, c) for b, c in gainers],

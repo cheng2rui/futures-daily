@@ -18,10 +18,14 @@
       </div>
       <div class="metric-sub">主力合约 {{ dashboardMarket.main_contracts ?? dashboardMarket.liquid_contracts ?? dashboardMarket.contracts ?? 0 }} 个</div>
     </div>
-    <div class="metric-card accent-blue">
-      <div class="metric-label">成交量</div>
+    <div class="metric-card accent-blue volume-value-card">
+      <div class="metric-label">成交量 / 成交额</div>
       <div class="metric-main">{{ fmtNum(dashboardMarket.volume) }}</div>
       <div class="metric-sub volume-delta" :class="volumeDeltaClass">{{ volumeDeltaText }}</div>
+      <div class="money-flow-row">
+        <span>成交额 {{ fmtMoney(dashboardMarket.turnover) }}</span>
+        <span :class="capitalFlowClass">{{ capitalFlowText }}</span>
+      </div>
     </div>
     <div class="metric-card accent-orange">
       <div class="metric-label">数据完整度</div>
@@ -49,6 +53,13 @@ const upRing = computed(() => ringDash(28, upCount.value / breadthTotal.value))
 const downRing = computed(() => ringDash(20, downCount.value / breadthTotal.value))
 const volumeDelta = computed(() => props.dashboardMarket.volume_delta == null ? null : Number(props.dashboardMarket.volume_delta || 0))
 const volumeDeltaPct = computed(() => props.dashboardMarket.volume_delta_pct == null ? null : Number(props.dashboardMarket.volume_delta_pct || 0))
+const capitalFlowAmount = computed(() => props.dashboardMarket.capital_flow_amount == null ? null : Number(props.dashboardMarket.capital_flow_amount || 0))
+const capitalFlowClass = computed(() => capitalFlowAmount.value == null || capitalFlowAmount.value === 0 ? 'tone-flat' : capitalFlowAmount.value > 0 ? 'tone-up' : 'tone-down')
+const capitalFlowText = computed(() => {
+  if (capitalFlowAmount.value == null) return '资金流 -'
+  const prefix = capitalFlowAmount.value > 0 ? '净流入' : capitalFlowAmount.value < 0 ? '净流出' : '资金持平'
+  return `${prefix} ${fmtMoney(Math.abs(capitalFlowAmount.value))}`
+})
 const volumeDeltaClass = computed(() => volumeDelta.value == null || volumeDelta.value === 0 ? 'tone-flat' : volumeDelta.value > 0 ? 'tone-up' : 'tone-down')
 const volumeDeltaText = computed(() => {
   if (volumeDelta.value == null) return props.activeDashboardMode === 'intraday' ? '暂无前日对比' : '当日总成交'
@@ -71,6 +82,14 @@ function fmtNum(value) {
   if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`
   return n.toFixed(0)
 }
+function fmtMoney(value) {
+  if (value == null) return '-'
+  const n = Number(value)
+  if (!Number.isFinite(n)) return value
+  if (Math.abs(n) >= 100000000) return `${(n / 100000000).toFixed(2)}亿`
+  if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`
+  return n.toFixed(0)
+}
 </script>
 
 <style scoped>
@@ -82,6 +101,10 @@ function fmtNum(value) {
 .metric-main { margin-top:8px; color:#0f172a; font-size:30px; font-weight:900; }
 .metric-sub { margin-top:6px; color:#94a3b8; font-size:13px; }
 .volume-delta { font-weight:900; }
+.money-flow-row { display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
+.money-flow-row span { border-radius:999px; padding:5px 8px; background:#f8fafc; border:1px solid #e2e8f0; color:#64748b; font-size:12px; font-weight:900; }
+.money-flow-row span.tone-up { color:#e03a3e; background:#fff1f2; border-color:#fecdd3; }
+.money-flow-row span.tone-down { color:#16a05d; background:#ecfdf5; border-color:#bbf7d0; }
 .tone-up { color:#e03a3e; } .tone-down { color:#16a05d; } .tone-flat { color:#94a3b8; }
 .market-breadth-card { --accent:#e94560; }
 .breadth-label { color:#94a3b8; }
