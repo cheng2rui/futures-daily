@@ -276,6 +276,8 @@ import KpiCard from '../components/KpiCard.vue'
 import SectionCard from '../components/SectionCard.vue'
 import { exchangeName } from '../exchange.js'
 import { kindLabel, statusLabel } from '../labels.js'
+import { normalizeApiError } from '../utils/errors.js'
+import { confirmDanger } from '../utils/confirm.js'
 
 const loading = ref(false)
 const loadingArchives = ref(false)
@@ -347,7 +349,7 @@ async function load() {
     diagnosticData.value = diagResp.data || { exchanges: [] }
     await Promise.all([loadArchives(), loadRetryHistory()])
   } catch (e) {
-    error.value = e?.response?.data?.detail || e?.message || '加载失败'
+    error.value = normalizeApiError(e, '加载失败')
   } finally {
     loading.value = false
   }
@@ -391,13 +393,12 @@ async function replay(row) {
       coverage_diff: null,
     }
   } catch (e) {
-    error.value = e?.response?.data?.detail || e?.message || 'Replay 失败'
+    error.value = normalizeApiError(e, 'Replay 失败')
   } finally {
     replaying.value = null
   }
 }
 
-function confirmDanger(message) { return window.confirm(message) }
 
 async function runRecollect(exchange, kind) {
   return runRecollectInternal(exchange, kind)
@@ -427,7 +428,7 @@ async function runRetryPlan() {
     }
     await load()
   } catch (e) {
-    error.value = e?.response?.data?.detail || e?.message || '执行计划失败'
+    error.value = normalizeApiError(e, '执行计划失败')
   } finally {
     loadingPlan.value = false
   }
@@ -486,7 +487,7 @@ async function runRecollectInternal(exchange, kind) {
     }
     await load()
   } catch (e) {
-    error.value = e?.response?.data?.detail || e?.message || '补采失败'
+    error.value = normalizeApiError(e, '补采失败')
   } finally {
     runningAction.value = ''
     loadingPlan.value = false
@@ -510,7 +511,7 @@ async function runCollectQuhe(step) {
     }
     await load()
   } catch (e) {
-    error.value = e?.response?.data?.detail || e?.message || '增强源刷新失败'
+    error.value = normalizeApiError(e, '增强源刷新失败')
   } finally {
     loadingPlan.value = false
   }

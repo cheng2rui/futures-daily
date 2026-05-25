@@ -118,6 +118,7 @@ import api from '../api.js'
 import SectionCard from '../components/SectionCard.vue'
 import SimpleTable from '../components/SimpleTable.vue'
 import { exchangeName } from '../exchange.js'
+import { confirmDanger } from '../utils/confirm.js'
 
 const settings = ref({})
 const symbols = ref([])
@@ -273,7 +274,6 @@ async function testPushLatest() {
   }
 }
 
-function confirmDanger(message) { return window.confirm(message) }
 
 function channelLabel(channel) {
   return ({ telegram: 'Telegram', wecom: '企业微信', wechatbot: 'WeChatBot' })[channel] || channel || '-'
