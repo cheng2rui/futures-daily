@@ -12,16 +12,30 @@ class Base(DeclarativeBase):
     pass
 
 
+def _ensure_sqlite_parent(url: str) -> None:
+    if not url.startswith("sqlite:///"):
+        return
+    raw_path = url.replace("sqlite:///", "", 1)
+    if not raw_path or raw_path == ":memory:":
+        return
+    parent = Path(raw_path).expanduser().parent
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Do not make importing app.db fail just because the configured SQLite
+        # parent is read-only or mounted later by the runtime. The actual DB
+        # connection will still surface a precise error if the file is unusable.
+        pass
+
+
 def _engine_url() -> str:
     url = get_settings().database.url
-    if url.startswith("sqlite:///"):
-        raw_path = url.replace("sqlite:///", "", 1)
-        if raw_path and raw_path != ":memory:":
-            Path(raw_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+    _ensure_sqlite_parent(url)
     return url
 
 
-engine = create_engine(_engine_url(), connect_args={"check_same_thread": False} if _engine_url().startswith("sqlite") else {})
+_engine_url_value = _engine_url()
+engine = create_engine(_engine_url_value, connect_args={"check_same_thread": False} if _engine_url_value.startswith("sqlite") else {})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

@@ -17,11 +17,16 @@ FOCUS5_ALIASES = {
 
 def _archive_root() -> Path:
     cfg = get_settings().seat_archive
-    p = Path(cfg.path)
-    if p.exists():
-        return p
-    fallback = Path("/Users/rey/.openclaw/workspace-rsstsx-bot/structured_archive")
-    return fallback
+    configured = Path(cfg.path)
+    if configured.exists():
+        return configured
+    # Developer convenience only: keep the local rsstsx archive working when it
+    # exists, but do not replace the configured path with a personal path on
+    # Docker/other hosts. That keeps error messages and diagnostics portable.
+    local_fallback = Path("/Users/rey/.openclaw/workspace-rsstsx-bot/structured_archive")
+    if local_fallback.exists():
+        return local_fallback
+    return configured
 
 
 def load_archive_summary(trade_date: str) -> dict[str, Any]:
@@ -32,16 +37,22 @@ def load_archive_summary(trade_date: str) -> dict[str, Any]:
     index_path = root / "index.json"
     if not index_path.exists():
         return empty_summary(trade_date, f"archive not found: {index_path}")
-    index = json.loads(index_path.read_text(encoding="utf-8"))
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        return empty_summary(trade_date, f"archive index unreadable: {type(exc).__name__}: {exc}")
     varieties = []
+    skipped_files = 0
     for item in index.get("varieties", []):
         fp = root / item.get("file", "")
         if not fp.exists():
+            skipped_files += 1
             continue
         try:
             data = json.loads(fp.read_text(encoding="utf-8"))
             varieties.append(compact_variety(data))
         except Exception:
+            skipped_files += 1
             continue
 
     net_delta_top = sorted(varieties, key=lambda x: abs(x.get("netDelta") or 0), reverse=True)[:15]
@@ -56,6 +67,7 @@ def load_archive_summary(trade_date: str) -> dict[str, Any]:
         "source": "rsstsx_structured_archive",
         "status": "ok",
         "count": len(varieties),
+        "skipped_files": skipped_files,
         "generatedAt": index.get("generatedAt"),
         "varieties": varieties,
         "net_delta_top": net_delta_top,
@@ -84,9 +96,18 @@ def compact_variety(data: dict[str, Any]) -> dict[str, Any]:
         "netDir": data.get("netDir"),
         "topLongByDelta": clean_member_row(data.get("topLongByDelta")),
         "topShortByDelta": clean_member_row(data.get("topShortByDelta")),
-        "longRows": [clean_member_row(x) for x in (data.get("longRows") or [])[:20]],
-        "shortRows": [clean_member_row(x) for x in (data.get("shortRows") or [])[:20]],
+        "longRows": clean_member_rows(data.get("longRows") or []),
+        "shortRows": clean_member_rows(data.get("shortRows") or []),
     }
+
+
+def clean_member_rows(rows: list[Any]) -> list[dict[str, Any]]:
+    cleaned: list[dict[str, Any]] = []
+    for row in rows[:20]:
+        item = clean_member_row(row)
+        if item:
+            cleaned.append(item)
+    return cleaned
 
 
 def clean_member_row(row: Any) -> dict[str, Any] | None:

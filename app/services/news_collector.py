@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from html import unescape
@@ -39,6 +40,8 @@ NEWS_SOURCES = [
     {"name": "华尔街见闻", "url": "https://wallstreetcn.com/live", "kind": "article_links", "queries": []},
     {"name": "财联社", "url": "https://www.cls.cn/", "kind": "cls_depth", "queries": []},
 ]
+MAX_NEWS_ITEMS = 80
+MAX_NEWS_WORKERS = 6
 
 
 def collect_news_digest(db: Session, trade_date: str) -> dict[str, Any]:
@@ -51,24 +54,28 @@ def collect_news_digest(db: Session, trade_date: str) -> dict[str, Any]:
     run = start_crawler_run(db, trade_date, "ALL", "news_digest", source=SOURCE)
     items: list[dict[str, Any]] = []
     errors: list[str] = []
-    for source in NEWS_SOURCES:
-        try:
-            if source["kind"] == "eastmoney_search":
-                for query in source.get("queries") or []:
-                    items.extend(fetch_eastmoney_search(source["name"], source["url"], query))
-            elif source["kind"] == "sina_roll":
-                items.extend(fetch_sina_roll(source["name"], source["url"]))
-            elif source["kind"] == "quhe_kuaixun":
-                items.extend(fetch_quhe_kuaixun(source["name"], source["url"]))
-            elif source["kind"] == "article_links":
-                items.extend(fetch_article_links(source["name"], source["url"]))
-            elif source["kind"] == "article_links_gbk":
-                items.extend(fetch_article_links(source["name"], source["url"], encoding="gbk"))
-            elif source["kind"] == "cls_depth":
-                items.extend(fetch_cls_depth(source["name"], source["url"]))
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{source['name']}: {type(exc).__name__}: {exc}")
-    items = dedupe_items(classify_items(items))[:80]
+    if NEWS_SOURCES:
+        workers = min(MAX_NEWS_WORKERS, len(NEWS_SOURCES))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(fetch_source_items, source): source for source in NEWS_SOURCES}
+            for future in as_completed(futures):
+                source = futures[future]
+                try:
+                    items.extend(future.result())
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"{source['name']}: {type(exc).__name__}: {exc}")
+    items = dedupe_items(classify_items(items))[:MAX_NEWS_ITEMS]
+    # Keep only latest same-day public news snapshot to avoid unbounded duplicates.
+    # Delete before insert so the freshly added row is not removed by the same
+    # transaction on SQLite.
+    db.execute(
+        delete(MarketSnapshot).where(
+            MarketSnapshot.trade_date == trade_date,
+            MarketSnapshot.exchange == "ALL",
+            MarketSnapshot.source == SOURCE,
+            MarketSnapshot.snapshot_type == "news_digest",
+        )
+    )
     db.add(MarketSnapshot(
         trade_date=trade_date,
         exchange="ALL",
@@ -76,9 +83,6 @@ def collect_news_digest(db: Session, trade_date: str) -> dict[str, Any]:
         snapshot_type="news_digest",
         raw_json=json.dumps({"items": items, "viewpoints": build_news_viewpoints(items), "errors": errors}, ensure_ascii=False, default=str),
     ))
-    # Keep only latest same-day public news snapshot to avoid unbounded duplicates.
-    # Delete older snapshots after adding latest would also delete the new row before
-    # flush in SQLite, so do the delete first in normal operation.
     db.flush()
     saved = len(items)
     error = "; ".join(errors) if errors and not saved else None
@@ -86,6 +90,28 @@ def collect_news_digest(db: Session, trade_date: str) -> dict[str, Any]:
     update_data_gap(db, trade_date, "ALL", "news_digest", saved, error)
     db.commit()
     return {"trade_date": trade_date, "rows": len(items), "saved": saved, "error": error, "sources": [s["name"] for s in NEWS_SOURCES]}
+
+
+def fetch_source_items(source: dict[str, Any]) -> list[dict[str, Any]]:
+    kind = source.get("kind")
+    name = source["name"]
+    url = source["url"]
+    if kind == "eastmoney_search":
+        out: list[dict[str, Any]] = []
+        for query in source.get("queries") or []:
+            out.extend(fetch_eastmoney_search(name, url, query))
+        return out
+    if kind == "sina_roll":
+        return fetch_sina_roll(name, url)
+    if kind == "quhe_kuaixun":
+        return fetch_quhe_kuaixun(name, url)
+    if kind == "article_links":
+        return fetch_article_links(name, url)
+    if kind == "article_links_gbk":
+        return fetch_article_links(name, url, encoding="gbk")
+    if kind == "cls_depth":
+        return fetch_cls_depth(name, url)
+    return []
 
 
 def load_latest_news_digest(db: Session, trade_date: str) -> dict[str, Any]:
