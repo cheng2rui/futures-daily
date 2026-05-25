@@ -12,6 +12,7 @@ from app.db import get_db
 from app.models import CapitalFlowDaily, Contract, DailyBar, JobRun, WatchSymbol
 from app.metadata.variety_meta import get_variety_name
 from app.services.collector import collect_daily_market
+from app.services.news_collector import collect_news_digest, load_latest_news_digest
 from app.services.structure import sector_for
 from app.services.trading_day import normalize_trade_date
 
@@ -38,6 +39,7 @@ def _empty_intraday(collect_result: dict | None = None) -> dict:
         "rankings": {"gainers": [], "losers": [], "volume": []},
         "watch_symbols": [],
         "sectors": [],
+        "intelligence": {"news_digest": {"items": [], "viewpoints": [], "summary": {}, "status": "missing"}},
     }
 
 
@@ -120,12 +122,17 @@ def refresh_intraday_snapshot(trade_date: str | None = None, db: Session = Depen
     db.commit()
     try:
         collect_result = collect_daily_market(db, selected_date)
+        try:
+            news_result = collect_news_digest(db, selected_date)
+        except Exception as news_exc:  # noqa: BLE001
+            news_result = {"error": f"{type(news_exc).__name__}: {news_exc}", "saved": 0, "rows": 0}
         payload = _build_intraday_snapshot(db, selected_date, collect_result)
         total_saved = sum(int(x.get("saved") or 0) for x in collect_result.get("results", [])) if collect_result else 0
         failed = [x for x in collect_result.get("results", []) if x.get("error")] if collect_result else []
         job.status = "partial" if failed and total_saved else "failed" if failed else "success"
-        job.message = f"盘中快照刷新完成，保存 {total_saved} 行" + (f"，异常 {len(failed)} 个" if failed else "")
-        job.result_json = json.dumps({"collect": collect_result, "snapshot": {"market": payload.get("market"), "updated_at": payload.get("updated_at")}}, ensure_ascii=False, default=str)
+        news_saved = int((news_result or {}).get("saved") or 0)
+        job.message = f"盘中快照刷新完成，保存 {total_saved} 行，资讯 {news_saved} 条" + (f"，异常 {len(failed)} 个" if failed else "")
+        job.result_json = json.dumps({"collect": collect_result, "news": news_result, "snapshot": {"market": payload.get("market"), "updated_at": payload.get("updated_at")}}, ensure_ascii=False, default=str)
         job.finished_at = datetime.utcnow()
         db.commit()
         payload["job_id"] = job.id
@@ -166,6 +173,7 @@ def _build_intraday_snapshot(db: Session, selected_date: str | None, collect_res
     watch_contracts = {(w.symbol or "").upper() for w in watch_symbols if any(ch.isdigit() for ch in (w.symbol or ""))}
 
     rows = [_bar_payload(bar, meta) for bar in bars]
+    news_digest = load_latest_news_digest(db, selected_date)
     liquid_rows = [r for r in rows if (r.get("volume") or 0) > 0 and (r.get("close") or 0) > 0]
     main_rows = _main_contracts(liquid_rows)
     up = sum(1 for r in main_rows if (r.get("change_pct") or 0) > 0)
@@ -212,6 +220,7 @@ def _build_intraday_snapshot(db: Session, selected_date: str | None, collect_res
         },
         "watch_symbols": [r for r in main_rows if ((r.get("exchange"), r.get("symbol")) in watch_keys or r.get("symbol") in watch_symbol_only or (r.get("contract") or "").upper() in watch_contracts)],
         "sectors": _sector_summary(main_rows),
+        "intelligence": {"news_digest": news_digest},
     }
 
 

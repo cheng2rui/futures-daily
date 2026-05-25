@@ -5,6 +5,7 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from html import unescape
 from typing import Any
 from urllib.parse import quote
 
@@ -32,6 +33,11 @@ NEWS_SOURCES = [
         "kind": "sina_roll",
         "queries": [],
     },
+    {"name": "曲合快讯", "url": "https://kuaixun.quheqihuo.com/", "kind": "quhe_kuaixun", "queries": []},
+    {"name": "七禾网", "url": "https://www.7hcn.com/", "kind": "article_links", "queries": []},
+    {"name": "同花顺期货", "url": "https://futures.10jqka.com.cn/", "kind": "article_links_gbk", "queries": []},
+    {"name": "华尔街见闻", "url": "https://wallstreetcn.com/live", "kind": "article_links", "queries": []},
+    {"name": "财联社", "url": "https://www.cls.cn/", "kind": "cls_depth", "queries": []},
 ]
 
 
@@ -52,6 +58,14 @@ def collect_news_digest(db: Session, trade_date: str) -> dict[str, Any]:
                     items.extend(fetch_eastmoney_search(source["name"], source["url"], query))
             elif source["kind"] == "sina_roll":
                 items.extend(fetch_sina_roll(source["name"], source["url"]))
+            elif source["kind"] == "quhe_kuaixun":
+                items.extend(fetch_quhe_kuaixun(source["name"], source["url"]))
+            elif source["kind"] == "article_links":
+                items.extend(fetch_article_links(source["name"], source["url"]))
+            elif source["kind"] == "article_links_gbk":
+                items.extend(fetch_article_links(source["name"], source["url"], encoding="gbk"))
+            elif source["kind"] == "cls_depth":
+                items.extend(fetch_cls_depth(source["name"], source["url"]))
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{source['name']}: {type(exc).__name__}: {exc}")
     items = dedupe_items(classify_items(items))[:80]
@@ -146,6 +160,114 @@ def fetch_sina_roll(source_name: str, url: str) -> list[dict[str, Any]]:
             "published_at": normalize_time(row.get("ctime") or row.get("time") or row.get("date")),
             "summary": clean_html(row.get("intro") or ""),
         })
+    return out
+
+def _news_keywords() -> list[str]:
+    return [
+        "期货", "商品", "原油", "黄金", "白银", "铜", "铝", "锌", "镍", "锡", "钢", "螺纹", "铁矿", "焦煤", "焦炭",
+        "农产品", "豆粕", "豆油", "棕榈", "鸡蛋", "生猪", "白糖", "棉花", "红枣", "能化", "PTA", "PX", "甲醇",
+        "纯碱", "玻璃", "橡胶", "碳酸锂", "集运", "欧线", "国债期货", "股指期货", "涨停", "跌停", "涨", "跌",
+        "持仓", "仓单", "库存", "基差", "现货", "进口", "出口", "供需", "宏观", "美元", "美联储", "OPEC", "EIA", "USDA",
+    ]
+
+
+def _abs_url(url: str, base: str) -> str:
+    if not url:
+        return ""
+    if url.startswith("//"):
+        return "https:" + url
+    if url.startswith("/"):
+        m = re.match(r"https?://[^/]+", base)
+        return (m.group(0) if m else "") + url
+    return url
+
+
+def fetch_quhe_kuaixun(source_name: str, url: str) -> list[dict[str, Any]]:
+    r = requests.get(url, headers={"User-Agent": UA, "Referer": "https://www.quheqihuo.com/"}, timeout=12)
+    r.encoding = "utf-8"
+    html = r.text
+    out = []
+    for time_s, title in re.findall(r'<span>(\d{2}:\d{2}:\d{2})</span>.*?<a[^>]+title=["\']([^"\']{10,})["\']', html, re.S):
+        title = clean_html(unescape(title))
+        if not title:
+            continue
+        out.append({"source": source_name, "title": title, "url": url, "published_at": f"{datetime.now():%Y-%m-%d} {time_s}", "summary": "曲合盘中快讯"})
+        if len(out) >= 30:
+            break
+    return out
+
+
+def fetch_article_links(source_name: str, url: str, encoding: str | None = None) -> list[dict[str, Any]]:
+    r = requests.get(url, headers={"User-Agent": UA, "Referer": url}, timeout=12)
+    r.encoding = encoding or r.apparent_encoding or "utf-8"
+    html = r.text
+    keywords = _news_keywords()
+    out: list[dict[str, Any]] = []
+    seen = set()
+    for href, raw_title in re.findall(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html, re.S):
+        title = clean_html(unescape(raw_title))
+        if len(title) < 8:
+            continue
+        if any(bad in title for bad in ["微博", "开户", "登录", "注册", "广告", "投稿", "设为首页", "加入收藏", "${", "function", "undefined"]):
+            continue
+        text = title.upper()
+        if not any(k.upper() in text for k in keywords):
+            continue
+        full_url = _abs_url(href, url)
+        key = full_url or title
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"source": source_name, "title": title[:180], "url": full_url, "published_at": "", "summary": f"{source_name}热点"})
+        if len(out) >= 30:
+            break
+    return out
+
+
+def fetch_cls_depth(source_name: str, url: str) -> list[dict[str, Any]]:
+    r = requests.get(url, headers={"User-Agent": UA, "Referer": "https://www.cls.cn/", "Accept": "text/html"}, timeout=12)
+    r.encoding = "utf-8"
+    html = r.text
+    idx = html.find('"assembleData"')
+    if idx < 0:
+        return []
+    brace_start = html.find("{", idx + len('"assembleData":'))
+    if brace_start < 0:
+        return []
+    depth = 0
+    json_end = -1
+    for i in range(brace_start, min(brace_start + 220000, len(html))):
+        c = html[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                json_end = i + 1
+                break
+    if json_end < 0:
+        return []
+    data = json.loads(html[brace_start:json_end])
+    keywords = _news_keywords()
+    out = []
+    for row in (data.get("depth_list") or [])[:60]:
+        title = clean_html(row.get("title") or "")
+        if len(title) < 8:
+            continue
+        text = f"{title} {row.get('brief') or ''}".upper()
+        if not any(k.upper() in text for k in keywords):
+            continue
+        article_id = row.get("id")
+        ctime = row.get("ctime")
+        out.append({
+            "source": source_name,
+            "title": title[:180],
+            "url": f"https://www.cls.cn/detail/{article_id}" if article_id else url,
+            "published_at": normalize_time(ctime),
+            "summary": clean_html(row.get("brief") or row.get("source") or ""),
+        })
+        if len(out) >= 20:
+            break
     return out
 
 

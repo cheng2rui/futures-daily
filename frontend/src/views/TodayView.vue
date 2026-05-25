@@ -97,7 +97,7 @@
       <div class="dashboard-toolbar">
         <div>
           <b>今日看板</b>
-          <span>{{ dashboardEditing ? '拖动卡片调整顺序，取消勾选可隐藏模块。布局会自动保存。' : activeDashboardMode === 'intraday' ? '盘中看最新行情变化、涨跌排行和自选品种。' : '复盘看今天发生了什么、哪些品种值得明天继续盯。' }}</span>
+          <span>{{ dashboardEditing ? '拖动卡片调整顺序，取消勾选可隐藏模块。布局会自动保存。' : activeDashboardMode === 'intraday' ? '盘中看最新行情变化、涨跌排行、自选品种和市场热点。' : '复盘看今天发生了什么、哪些品种值得明天继续盯。' }}</span>
         </div>
         <div class="dashboard-actions">
           <div class="mode-switch" role="tablist" aria-label="今日看板视图">
@@ -561,8 +561,9 @@ const sourceTip = computed(() => {
 const reportBrief = computed(() => report.value.report_brief || null)
 const abnormalCards = computed(() => report.value.intelligence?.abnormal_cards || [])
 const tomorrowWatch = computed(() => report.value.intelligence?.tomorrow_watch || [])
-const newsItems = computed(() => (report.value.intelligence?.news_digest?.items || []).slice(0, 8))
-const newsViewpoints = computed(() => (report.value.intelligence?.news_digest?.viewpoints || []).slice(0, 8))
+const activeNewsDigest = computed(() => activeDashboardMode.value === 'intraday' ? intraday.value.intelligence?.news_digest || {} : report.value.intelligence?.news_digest || {})
+const newsItems = computed(() => (activeNewsDigest.value.items || []).slice(0, 8))
+const newsViewpoints = computed(() => (activeNewsDigest.value.viewpoints || []).slice(0, 8))
 const watchDigest = computed(() => report.value.intelligence?.watch_digest || {})
 const watchDigestItems = computed(() => watchDigest.value.items || [])
 const termStructure = computed(() => report.value.term_structure || report.value.intelligence?.term_structure || {})
@@ -579,7 +580,7 @@ const longSeatOption = computed(() => horizontalBarOption((report.value.seats?.l
 const shortSeatOption = computed(() => horizontalBarOption((report.value.seats?.short_increase_top || []).slice(0, 10).map(x => ({ name: `${x.variety} ${x.seat}`, value: Number(x.change || 0) })), '#12966b'))
 
 function emptyReport() { return { overview: {}, market: {}, meta: {}, sectors: [], rankings: {}, data_quality: {}, watch_symbols: [], risk_flags: [], intelligence: {} } }
-function emptyIntraday() { return { mode: 'intraday', trade_date: '', updated_at: '', disclaimer: '这里不是实时行情，只展示最近一次成功获取的数据。', market: {}, rankings: {}, sectors: [], watch_symbols: [] } }
+function emptyIntraday() { return { mode: 'intraday', trade_date: '', updated_at: '', disclaimer: '这里不是实时行情，只展示最近一次成功获取的数据。', market: {}, rankings: {}, sectors: [], watch_symbols: [], intelligence: { news_digest: { items: [], viewpoints: [] } } } }
 function loadDashboardLayout() {
   try {
     const saved = JSON.parse(localStorage.getItem(DASHBOARD_LAYOUT_KEY) || '{}')
