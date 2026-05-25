@@ -721,6 +721,13 @@ function chartTextStyle() { return { color: '#64748b', fontFamily: 'Inter, -appl
 function barOption({ names, series }) { return { color: series.map(x => x.color), tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: compactNumber }, legend: { top: 0, textStyle: chartTextStyle() }, grid: { top: 42, left: 48, right: 18, bottom: 34 }, xAxis: { type: 'category', data: names, axisLabel: { ...chartTextStyle(), interval: 0 }, axisTick: { show: false }, axisLine: { lineStyle: { color: '#e2e8f0' } } }, yAxis: { type: 'value', axisLabel: { ...chartTextStyle(), formatter: compactNumber }, splitLine: { lineStyle: { color: '#eef2f7' } } }, series: series.map(x => ({ name: x.name, type: 'bar', data: x.data, barMaxWidth: 18, itemStyle: { borderRadius: [7, 7, 0, 0] } })) } }
 function horizontalBarOption(items, color) { const rows = [...items].filter(x => Number.isFinite(x.value)).sort((a, b) => a.value - b.value); return { color: [color], tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: compactNumber }, grid: { top: 10, left: 92, right: 24, bottom: 24 }, xAxis: { type: 'value', axisLabel: { ...chartTextStyle(), formatter: compactNumber }, splitLine: { lineStyle: { color: '#eef2f7' } } }, yAxis: { type: 'category', data: rows.map(x => x.name), axisLabel: { ...chartTextStyle(), width: 86, overflow: 'truncate' }, axisTick: { show: false }, axisLine: { show: false } }, series: [{ type: 'bar', data: rows.map(x => x.value), barMaxWidth: 16, itemStyle: { borderRadius: [0, 8, 8, 0] } }] } }
 function formatDate(value) { if (!value) return ''; const text = String(value); if (/^\d{8}$/.test(text)) return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6)}`; return text }
+function normalizeError(value) {
+  const text = String(value || 'unknown').replace(/\s+/g, ' ').trim()
+  if (text.includes('fallback unavailable')) return '备用数据也拿不到，需要等交易所恢复或接商业数据'
+  if (text.includes('not_collected')) return '未采集到数据'
+  if (text.includes('timeout')) return '请求超时'
+  return text.slice(0, 120)
+}
 function confirmDanger(message) { return window.confirm(message) }
 
 async function copyPushDigest() {
@@ -795,7 +802,9 @@ async function loadIntraday(refresh = false) {
     intraday.value = data || emptyIntraday()
     if (refresh && data?.job_id) notice.value = `最新行情已更新，任务 #${data.job_id}。`
   } catch (err) {
-    if (activeDashboardMode.value === 'intraday') error.value = '最新行情加载失败，请稍后重试。'
+    const msg = err?.response?.data?.detail || err?.message || '最新行情加载失败，请稍后重试。'
+    if (activeDashboardMode.value === 'intraday') error.value = msg
+    else notice.value = msg
   } finally {
     intradayLoading.value = false
   }
