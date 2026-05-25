@@ -29,7 +29,10 @@ def pct_change(row: DailyBar) -> float | None:
     base = row.pre_close or row.settlement
     if not base or not row.close:
         return None
-    return (row.close - base) / base * 100
+    try:
+        return (float(row.close) - float(base)) / float(base) * 100
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
 
 
 def build_structure(bars: list[DailyBar]) -> dict:

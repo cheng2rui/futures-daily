@@ -351,14 +351,29 @@ def summarize_dataset(rows: list[dict[str, Any]], archive: dict[str, Any]) -> di
     }
 
 
+def safe_float_value(value: Any) -> float:
+    try:
+        f = float(value)
+        return f if not (f != f) else 0.0  # NaN guard
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def sum_num(values) -> float:
-    return float(sum(v or 0 for v in values))
+    return float(sum(safe_float_value(v) for v in values))
 
 
 def notional(bar: DailyBar, point_value: float | None) -> float | None:
-    if point_value is None or bar.close is None or bar.open_interest is None:
+    if point_value is None:
         return None
-    return round(point_value * bar.close * bar.open_interest, 2)
+    try:
+        close = float(bar.close)
+        oi = float(bar.open_interest)
+        if not close or not oi:
+            return None
+        return round(point_value * close * oi, 2)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
 
 
 def safe_float(value: Any) -> float | None:

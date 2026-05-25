@@ -56,11 +56,12 @@ def build_term_structure(bars: list[DailyBar], limit: int = 12) -> dict[str, Any
 
 
 def curve_point(bar: DailyBar) -> dict[str, Any]:
+    chg = pct_change(bar)
     return {
         "contract": bar.contract,
         "close": bar.close,
         "settlement": bar.settlement,
-        "change_pct": round(pct_change(bar), 2) if pct_change(bar) is not None else None,
+        "change_pct": round(chg, 2) if chg is not None else None,
         "volume": bar.volume,
         "open_interest": bar.open_interest,
         "sort_key": contract_sort_key(bar.contract),
