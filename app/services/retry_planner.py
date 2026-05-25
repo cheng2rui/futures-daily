@@ -146,9 +146,11 @@ def skip_item(exchange: str, kind: str, cell: dict[str, Any], reason_code: str) 
     if reason_code == "archive_dependency":
         reason = "席位归档来自外部结构化归档/历史资产，不能通过普通采集直接补齐。"
     category = classify_record_error(message=reason, status=cell.get("status"), kind=kind)
+    source = recommended_source(exchange, kind) if kind in CORE_KINDS else enhancement_source(kind) if kind in ENHANCEMENT_KINDS else "archive"
     return {
         "exchange": exchange,
         "kind": kind,
+        "source": source,
         "status": cell.get("status"),
         "reason_code": reason_code,
         "reason": reason,
@@ -156,6 +158,7 @@ def skip_item(exchange: str, kind: str, cell: dict[str, Any], reason_code: str) 
         "decision": reason_code,
         "decision_label": skip_label(reason_code),
         "error_category": category,
+        "diagnostic_hint": skip_diagnostic_hint(reason_code, category),
     }
 
 
@@ -253,6 +256,33 @@ def skip_label(reason_code: str) -> str:
     }.get(reason_code, "跳过")
 
 
+def skip_diagnostic_hint(reason_code: str, category: dict[str, Any]) -> str:
+    if reason_code == "not_supported":
+        return "当前交易所/数据类型没有可用采集 adapter；需要接入新源或授权源。"
+    if reason_code == "archive_dependency":
+        return "此项依赖外部归档文件，优先检查归档路径、index.json 和 parser replay。"
+    if reason_code == "parser_replay":
+        return "直接重试可能继续失败，先用 raw archive replay 定位字段变化。"
+    if reason_code in {"adapter_not_supported", "auth"}:
+        return category.get("suggestion") or "需要先补 adapter、凭证或授权源。"
+    return category.get("suggestion") or "查看 source health、raw archive 和最近任务记录。"
+
+
+def skipped_breakdown(skipped: list[dict[str, Any]]) -> dict[str, Any]:
+    by_reason: dict[str, int] = {}
+    by_kind: dict[str, int] = {}
+    samples: list[str] = []
+    for item in skipped:
+        reason_code = item.get("reason_code") or "unknown"
+        kind = item.get("kind") or "unknown"
+        by_reason[reason_code] = by_reason.get(reason_code, 0) + 1
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+        if len(samples) < 5:
+            label = item.get("decision_label") or skip_label(reason_code)
+            samples.append(f"{item.get('exchange') or '-'} {kind}：{label}")
+    return {"by_reason": by_reason, "by_kind": by_kind, "samples": samples}
+
+
 def risk_note(source: str, status: str, exchange: str, kind: str) -> str:
     if exchange == "DCE" and kind == "seat_rank":
         return "DCE 席位公开源长期不稳定，重试可能仍失败；需要商业授权源兜底。"
@@ -264,10 +294,18 @@ def risk_note(source: str, status: str, exchange: str, kind: str) -> str:
 def plan_summary(steps: list[dict[str, Any]], skipped: list[dict[str, Any]]) -> dict[str, Any]:
     core_steps = sum(1 for s in steps if s.get("type") == "recollect")
     enhancement_steps = sum(1 for s in steps if s.get("type") == "collect_quhe")
+    skip_info = skipped_breakdown(skipped)
+    skipped_text = f"；跳过 {len(skipped)} 个不可自动处理项。"
+    if skipped:
+        samples = "、".join(skip_info["samples"])
+        skipped_text = f"；跳过 {len(skipped)} 个不可自动处理项（{samples}）。"
     return {
         "steps": len(steps),
         "core_steps": core_steps,
         "enhancement_steps": enhancement_steps,
         "skipped": len(skipped),
-        "summary": f"建议执行 {len(steps)} 个步骤：核心补采 {core_steps} 个，增强源刷新 {enhancement_steps} 个；跳过 {len(skipped)} 个不可自动处理项。",
+        "skipped_by_reason": skip_info["by_reason"],
+        "skipped_by_kind": skip_info["by_kind"],
+        "skipped_samples": skip_info["samples"],
+        "summary": f"建议执行 {len(steps)} 个步骤：核心补采 {core_steps} 个，增强源刷新 {enhancement_steps} 个{skipped_text}",
     }

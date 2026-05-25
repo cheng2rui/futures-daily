@@ -30,6 +30,12 @@ def check() -> None:
         assert dce_seat["error_category"]["code"] == "empty"
         assert any(step["type"] == "collect_quhe" and step["decision"] == "retry_enhancement_bundle" for step in plan["steps"])
         assert any(item["exchange"] == "INE" and item["kind"] == "seat_rank" and item["reason_code"] == "not_supported" and item["executable"] is False for item in plan["skipped"])
+        ine_seat = next(item for item in plan["skipped"] if item["exchange"] == "INE" and item["kind"] == "seat_rank")
+        assert ine_seat["source"] == "akshare"
+        assert ine_seat["diagnostic_hint"]
+        assert plan["summary"]["skipped_by_reason"].get("not_supported", 0) >= 1
+        assert plan["summary"]["skipped_by_kind"].get("seat_rank", 0) >= 1
+        assert plan["summary"]["skipped_samples"]
         priorities = [step["priority"] for step in plan["steps"]]
         assert priorities == sorted(priorities)
         assert all(step["order"] >= 1 for step in plan["steps"])
