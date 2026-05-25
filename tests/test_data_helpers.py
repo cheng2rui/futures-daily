@@ -26,6 +26,8 @@ def check() -> None:
     assert notional(SimpleNamespace(close=100, open_interest=0), 10.0) is None
     assert notional(SimpleNamespace(close=100, open_interest=1000), None) is None
     assert notional(SimpleNamespace(close="bad", open_interest=1000), 10.0) is None
+    assert notional(SimpleNamespace(close=math.inf, open_interest=1000), 10.0) is None
+    assert notional(SimpleNamespace(close=100, open_interest=math.nan), 10.0) is None
 
     # safe_float_value
     assert safe_float_value(42) == 42.0
@@ -34,7 +36,8 @@ def check() -> None:
     assert safe_float_value("") == 0.0
     assert safe_float_value("bad") == 0.0
     assert safe_float_value(float("nan")) == 0.0
-    assert safe_float_value(math.inf) == math.inf
+    assert safe_float_value(math.inf) == 0.0
+    assert safe_float_value(-math.inf) == 0.0
 
 
 if __name__ == "__main__":

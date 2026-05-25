@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections import defaultdict
 from datetime import datetime
@@ -354,7 +355,7 @@ def summarize_dataset(rows: list[dict[str, Any]], archive: dict[str, Any]) -> di
 def safe_float_value(value: Any) -> float:
     try:
         f = float(value)
-        return f if not (f != f) else 0.0  # NaN guard
+        return f if math.isfinite(f) else 0.0
     except (TypeError, ValueError):
         return 0.0
 
@@ -369,9 +370,11 @@ def notional(bar: DailyBar, point_value: float | None) -> float | None:
     try:
         close = float(bar.close)
         oi = float(bar.open_interest)
-        if not close or not oi:
+        point = float(point_value)
+        if not close or not oi or not point:
             return None
-        return round(point_value * close * oi, 2)
+        result = point * close * oi
+        return round(result, 2) if math.isfinite(result) else None
     except (TypeError, ValueError, ZeroDivisionError):
         return None
 
