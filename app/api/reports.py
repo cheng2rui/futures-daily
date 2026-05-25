@@ -277,13 +277,22 @@ async def _dispatch_report_push(db: Session, payload: dict[str, Any], source: st
     return {"ok": True, "trade_date": trade_date, "digest": digest, "dispatch": results, "job_id": job.id, "job_status": job.status}
 
 
+def _safe_schema_version(meta: Any) -> int:
+    if not isinstance(meta, dict):
+        return 0
+    try:
+        return int(meta.get("report_schema_version") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def ensure_report_payload(db: Session, report: Report) -> dict:
     try:
         payload = json.loads(report.report_json or "{}")
     except Exception:
         payload = {}
     meta = payload.get("meta") if isinstance(payload, dict) else {}
-    schema_version = int((meta or {}).get("report_schema_version") or 0)
+    schema_version = _safe_schema_version(meta)
     if schema_version < REPORT_SCHEMA_VERSION or not payload.get("report_sections") or not payload.get("report_brief"):
         report = build_report(db, report.trade_date)
         payload = json.loads(report.report_json or "{}")

@@ -50,7 +50,7 @@ def _change_pct(bar: DailyBar) -> float | None:
         return None
     try:
         return round((float(close) - float(base)) / float(base) * 100, 2)
-    except ZeroDivisionError:
+    except (ZeroDivisionError, TypeError, ValueError, OverflowError):
         return None
 
 

@@ -20,6 +20,7 @@ python3 -m compileall app tests
 .venv/bin/python tests/test_market_volume_delta.py
 .venv/bin/python tests/test_news_collector.py
 .venv/bin/python tests/test_seat_archive.py
+.venv/bin/python tests/test_api_helpers.py
 .venv/bin/python tests/test_market_temperature.py
 .venv/bin/python tests/test_notify.py
 .venv/bin/python tests/test_akshare_source.py
