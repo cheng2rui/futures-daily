@@ -8,27 +8,7 @@ export PYTHONPATH="${PYTHONPATH:-.}"
 export FUTURES_DAILY_DB="${FUTURES_DAILY_DB:-tmp/test.db}"
 
 python3 -m compileall app tests
-.venv/bin/python tests/test_gap_analysis.py
-.venv/bin/python tests/test_coverage_matrix.py
-.venv/bin/python tests/test_coverage_diff.py
-.venv/bin/python tests/test_raw_archive.py
-.venv/bin/python tests/test_raw_replay.py
-.venv/bin/python tests/test_source_diagnostics.py
-.venv/bin/python tests/test_source_health.py
-.venv/bin/python tests/test_retry_planner.py
-.venv/bin/python tests/test_retry_runner.py
-.venv/bin/python tests/test_market_volume_delta.py
-.venv/bin/python tests/test_news_collector.py
-.venv/bin/python tests/test_seat_archive.py
-.venv/bin/python tests/test_api_helpers.py
-.venv/bin/python tests/test_data_helpers.py
-.venv/bin/python tests/test_market_temperature.py
-.venv/bin/python tests/test_notify.py
-.venv/bin/python tests/test_akshare_source.py
-.venv/bin/python tests/test_ask_daily.py
-.venv/bin/python tests/test_tomorrow_watch.py
-.venv/bin/python tests/test_push_digest.py
-.venv/bin/python tests/test_history_factors.py
-.venv/bin/python tests/test_history_backfill.py
-.venv/bin/python tests/test_term_structure.py
+for t in tests/test_*.py; do
+  .venv/bin/python "$t"
+done
 npm run build --prefix frontend

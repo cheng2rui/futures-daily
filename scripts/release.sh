@@ -96,6 +96,7 @@ subprocess.run(
 PY
 
 python3 -m compileall app
+scripts/test.sh
 npm run build --prefix frontend
 
 git add app/version.py frontend/package.json frontend/package-lock.json frontend/src/App.vue
