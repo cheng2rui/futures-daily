@@ -102,6 +102,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import api from '../api.js'
+import { normalizeError } from '../utils/errors.js'
 import SectionCard from '../components/SectionCard.vue'
 import { statusLabel } from '../labels.js'
 
@@ -189,13 +190,6 @@ function failureText(job) {
   if (data?.error) errors.push(normalizeError(data.error))
   if (!errors.length && job.status === 'failed') return normalizeError(job.message || '任务失败，详情见原始结果或服务日志')
   return errors.slice(0, 3).join('；')
-}
-function normalizeError(value) {
-  const text = String(value || 'unknown').replace(/\s+/g, ' ').trim()
-  if (text.includes('fallback unavailable')) return '备用数据也拿不到，需要等交易所恢复或接商业数据'
-  if (text.includes('not_collected')) return '未采集到数据'
-  if (text.includes('timeout')) return '请求超时'
-  return text.slice(0, 120)
 }
 function channelLabel(channel) { return ({ telegram: 'Telegram', wecom: '企业微信', wechatbot: 'WeChatBot' })[channel] || channel || '-' }
 function backfillDayDetail(data, date) {
