@@ -397,6 +397,8 @@ async function replay(row) {
   }
 }
 
+function confirmDanger(message) { return window.confirm(message) }
+
 async function runRecollect(exchange, kind) {
   return runRecollectInternal(exchange, kind)
 }
@@ -408,6 +410,7 @@ async function runFirstRetryStep() {
 
 async function runRetryPlan() {
   if (!tradeDate.value) return
+  if (!confirmDanger(`确认执行 ${tradeDate.value} 的自动补采计划？最多执行 3 步，并会重建相关日报。`)) return
   loadingPlan.value = true
   error.value = ''
   notice.value = ''
@@ -467,6 +470,7 @@ async function runRetryStep(step) {
 
 async function runRecollectInternal(exchange, kind) {
   if (!tradeDate.value || !exchange || !kind) return
+  if (!confirmDanger(`确认补采 ${tradeDate.value} ${exchange} 的${kindLabel(kind)}数据，并重建日报？`)) return
   runningAction.value = `${exchange}-${kind}`
   loadingPlan.value = true
   error.value = ''
@@ -491,6 +495,7 @@ async function runRecollectInternal(exchange, kind) {
 
 async function runCollectQuhe(step) {
   if (!tradeDate.value) return
+  if (!confirmDanger(`确认刷新 ${tradeDate.value} 的曲合/官方增强数据？`)) return
   loadingPlan.value = true
   error.value = ''
   notice.value = ''

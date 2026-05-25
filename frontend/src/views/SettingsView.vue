@@ -228,6 +228,7 @@ async function saveWeChatBot() {
 }
 
 async function testNotify() {
+  if (!confirmDanger('确认发送一条通知测试消息？这会触达已启用的通知渠道。')) return
   testingNotify.value = true
   settingsMessage.value = ''
   pushResults.value = []
@@ -250,6 +251,7 @@ async function testNotify() {
 }
 
 async function testPushLatest() {
+  if (!confirmDanger('确认推送最新日报？这会发送到已配置的通知渠道。')) return
   testingPush.value = true
   settingsMessage.value = ''
   pushResults.value = []
@@ -270,6 +272,8 @@ async function testPushLatest() {
     testingPush.value = false
   }
 }
+
+function confirmDanger(message) { return window.confirm(message) }
 
 function channelLabel(channel) {
   return ({ telegram: 'Telegram', wecom: '企业微信', wechatbot: 'WeChatBot' })[channel] || channel || '-'

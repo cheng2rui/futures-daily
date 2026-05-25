@@ -721,6 +721,7 @@ function chartTextStyle() { return { color: '#64748b', fontFamily: 'Inter, -appl
 function barOption({ names, series }) { return { color: series.map(x => x.color), tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: compactNumber }, legend: { top: 0, textStyle: chartTextStyle() }, grid: { top: 42, left: 48, right: 18, bottom: 34 }, xAxis: { type: 'category', data: names, axisLabel: { ...chartTextStyle(), interval: 0 }, axisTick: { show: false }, axisLine: { lineStyle: { color: '#e2e8f0' } } }, yAxis: { type: 'value', axisLabel: { ...chartTextStyle(), formatter: compactNumber }, splitLine: { lineStyle: { color: '#eef2f7' } } }, series: series.map(x => ({ name: x.name, type: 'bar', data: x.data, barMaxWidth: 18, itemStyle: { borderRadius: [7, 7, 0, 0] } })) } }
 function horizontalBarOption(items, color) { const rows = [...items].filter(x => Number.isFinite(x.value)).sort((a, b) => a.value - b.value); return { color: [color], tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, valueFormatter: compactNumber }, grid: { top: 10, left: 92, right: 24, bottom: 24 }, xAxis: { type: 'value', axisLabel: { ...chartTextStyle(), formatter: compactNumber }, splitLine: { lineStyle: { color: '#eef2f7' } } }, yAxis: { type: 'category', data: rows.map(x => x.name), axisLabel: { ...chartTextStyle(), width: 86, overflow: 'truncate' }, axisTick: { show: false }, axisLine: { show: false } }, series: [{ type: 'bar', data: rows.map(x => x.value), barMaxWidth: 16, itemStyle: { borderRadius: [0, 8, 8, 0] } }] } }
 function formatDate(value) { if (!value) return ''; const text = String(value); if (/^\d{8}$/.test(text)) return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6)}`; return text }
+function confirmDanger(message) { return window.confirm(message) }
 
 async function copyPushDigest() {
   if (!pushText.value) return
@@ -747,6 +748,7 @@ async function copyPushDigest() {
 
 async function pushReport() {
   if (!report.value.date) return
+  if (!confirmDanger(`确认推送 ${formatDate(report.value.date)} 的期货日报？这会发送到已配置的通知渠道。`)) return
   pushing.value = true
   error.value = ''
   notice.value = ''
@@ -798,10 +800,27 @@ async function loadIntraday(refresh = false) {
     intradayLoading.value = false
   }
 }
-async function generate() { loading.value = true; error.value = ''; notice.value = ''; try { await api.post('/reports/generate', null, { params: viewingDate.value ? { trade_date: viewingDate.value, collect: true } : {} }); await load(); await loadIntraday(false); notice.value = '日报已生成。' } finally { loading.value = false } }
+async function generate() {
+  const target = viewingDate.value ? formatDate(viewingDate.value) : '最新交易日'
+  if (!confirmDanger(`确认重新获取数据并生成 ${target} 的日报？这会触发采集任务。`)) return
+  loading.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    await api.post('/reports/generate', null, { params: viewingDate.value ? { trade_date: viewingDate.value, collect: true } : {} })
+    await load()
+    await loadIntraday(false)
+    notice.value = '日报已生成。'
+  } catch (err) {
+    error.value = '日报生成失败，请到任务记录里看失败原因。'
+  } finally {
+    loading.value = false
+  }
+}
 async function rebuildCurrentReport() {
   const tradeDate = report.value.date || viewingDate.value
   if (!tradeDate) return
+  if (!confirmDanger(`确认重新生成 ${formatDate(tradeDate)} 的日报？这不会重新采集，但会覆盖当前报告内容。`)) return
   loading.value = true
   error.value = ''
   notice.value = ''
@@ -817,6 +836,7 @@ async function rebuildCurrentReport() {
 }
 async function recollectExchange(x) {
   if (!report.value.date || !x?.exchange || !isRecoverableQualityRow(x)) return
+  if (!confirmDanger(`确认补采 ${exchangeName(x.exchange)} 的${recollectButtonText(x)}数据？完成后会重建日报。`)) return
   error.value = ''
   notice.value = ''
   recollecting.value = { ...recollecting.value, [x.exchange]: true }
@@ -833,6 +853,7 @@ async function recollectExchange(x) {
 async function recollectFailedOnly() {
   const rows = [...recoverableQualityRows.value]
   if (!report.value.date || !rows.length) return
+  if (!confirmDanger(`确认批量补采 ${rows.length} 个缺口并重新生成日报？`)) return
   error.value = ''
   notice.value = ''
   bulkRecollecting.value = true
@@ -857,6 +878,7 @@ async function recollectFailedOnly() {
 async function backfillRecentHistory() {
   const tradeDate = report.value.date || viewingDate.value
   if (!tradeDate || historyBackfilling.value) return
+  if (!confirmDanger(`确认补采 ${formatDate(tradeDate)} 前近 5 个交易日历史，并重建当前日报？`)) return
   error.value = ''
   notice.value = ''
   historyBackfilling.value = true
