@@ -27,7 +27,6 @@ def collect_daily_market(db: Session, trade_date: str | None = None, exchanges: 
     results = []
     for exchange in _enabled_exchanges(exchanges):
         run = start_crawler_run(db, trade_date, exchange, "daily")
-        db.execute(delete(DailyBar).where(DailyBar.trade_date == trade_date, DailyBar.exchange == exchange))
         result = source.fetch_daily(trade_date, exchange)
         archive_fetch_result(db, trade_date=trade_date, exchange=exchange, kind="daily", source="akshare", result=result)
         db.add(MarketSnapshot(
@@ -37,22 +36,28 @@ def collect_daily_market(db: Session, trade_date: str | None = None, exchanges: 
             snapshot_type="daily",
             raw_json=json.dumps({"rows": result.rows, "error": result.error}, ensure_ascii=False, default=str),
         ))
-        saved = 0
+        # Normalize all rows first; only replace data when we have usable results.
+        # This prevents a failed/empty fetch from deleting previously collected data.
+        normalized = []
         for row in result.rows:
             n = normalize_daily_row(exchange, row)
             if not n["contract"]:
                 continue
-            db.add(DailyBar(
-                trade_date=trade_date,
-                exchange=exchange,
-                symbol=n["symbol"],
-                contract=n["contract"],
-                open=n["open"], high=n["high"], low=n["low"], close=n["close"],
-                pre_close=n["pre_close"], volume=n["volume"], open_interest=n["open_interest"],
-                turnover=n["turnover"], settlement=n["settlement"],
-                raw_json=json.dumps(n["raw"], ensure_ascii=False, default=str),
-            ))
-            saved += 1
+            normalized.append(n)
+        saved = len(normalized)
+        if saved > 0:
+            db.execute(delete(DailyBar).where(DailyBar.trade_date == trade_date, DailyBar.exchange == exchange))
+            for n in normalized:
+                db.add(DailyBar(
+                    trade_date=trade_date,
+                    exchange=exchange,
+                    symbol=n["symbol"],
+                    contract=n["contract"],
+                    open=n["open"], high=n["high"], low=n["low"], close=n["close"],
+                    pre_close=n["pre_close"], volume=n["volume"], open_interest=n["open_interest"],
+                    turnover=n["turnover"], settlement=n["settlement"],
+                    raw_json=json.dumps(n["raw"], ensure_ascii=False, default=str),
+                ))
         finish_crawler_run(run, rows=len(result.rows), saved=saved, error=result.error)
         update_data_gap(db, trade_date, exchange, "daily", rows=saved, error=result.error)
         results.append({"exchange": exchange, "rows": len(result.rows), "saved": saved, "error": result.error})
@@ -66,7 +71,6 @@ def collect_seat_ranks(db: Session, trade_date: str | None = None, exchanges: li
     results = []
     for exchange in _enabled_exchanges(exchanges):
         run = start_crawler_run(db, trade_date, exchange, "seat_rank")
-        db.execute(delete(SeatRankRow).where(SeatRankRow.trade_date == trade_date, SeatRankRow.exchange == exchange))
         result = source.fetch_seat_rank(trade_date, exchange)
         archive_fetch_result(db, trade_date=trade_date, exchange=exchange, kind="seat_rank", source="akshare", result=result)
         db.add(MarketSnapshot(
@@ -76,21 +80,25 @@ def collect_seat_ranks(db: Session, trade_date: str | None = None, exchanges: li
             snapshot_type="seat_rank",
             raw_json=json.dumps({"rows": result.rows[:2000], "row_count": len(result.rows), "error": result.error}, ensure_ascii=False, default=str),
         ))
-        saved = 0
+        normalized = []
         for row in result.rows:
             n = normalize_seat_row(exchange, row)
-            db.add(SeatRankRow(
-                trade_date=trade_date,
-                exchange=exchange,
-                variety=n["variety"],
-                contract=n["contract"],
-                rank=n["rank"],
-                vol_party_name=n["vol_party_name"], vol=n["vol"], vol_chg=n["vol_chg"],
-                long_party_name=n["long_party_name"], long_open_interest=n["long_open_interest"], long_open_interest_chg=n["long_open_interest_chg"],
-                short_party_name=n["short_party_name"], short_open_interest=n["short_open_interest"], short_open_interest_chg=n["short_open_interest_chg"],
-                raw_json=json.dumps(n["raw"], ensure_ascii=False, default=str),
-            ))
-            saved += 1
+            normalized.append(n)
+        saved = len(normalized)
+        if saved > 0:
+            db.execute(delete(SeatRankRow).where(SeatRankRow.trade_date == trade_date, SeatRankRow.exchange == exchange))
+            for n in normalized:
+                db.add(SeatRankRow(
+                    trade_date=trade_date,
+                    exchange=exchange,
+                    variety=n["variety"],
+                    contract=n["contract"],
+                    rank=n["rank"],
+                    vol_party_name=n["vol_party_name"], vol=n["vol"], vol_chg=n["vol_chg"],
+                    long_party_name=n["long_party_name"], long_open_interest=n["long_open_interest"], long_open_interest_chg=n["long_open_interest_chg"],
+                    short_party_name=n["short_party_name"], short_open_interest=n["short_open_interest"], short_open_interest_chg=n["short_open_interest_chg"],
+                    raw_json=json.dumps(n["raw"], ensure_ascii=False, default=str),
+                ))
         finish_crawler_run(run, rows=len(result.rows), saved=saved, error=result.error)
         update_data_gap(db, trade_date, exchange, "seat_rank", rows=saved, error=result.error)
         results.append({"exchange": exchange, "rows": len(result.rows), "saved": saved, "error": result.error})

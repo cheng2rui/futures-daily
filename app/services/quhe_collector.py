@@ -39,25 +39,35 @@ def collect_capital_flow(db: Session, trade_date: str, source: QuheSource | None
     result = source.fetch_capital_flow()
     archive_fetch_result(db, trade_date=trade_date, exchange="ALL", kind="capital_flow", source=SOURCE, result=result)
     db.add(MarketSnapshot(trade_date=trade_date, exchange="ALL", source=SOURCE, snapshot_type="capital_flow", raw_json=snapshot_json(result)))
-    db.execute(delete(CapitalFlowDaily).where(CapitalFlowDaily.trade_date == trade_date, CapitalFlowDaily.source == SOURCE))
-    saved = 0
+    normalized = []
     src_time = ms_to_datetime((result.meta or {}).get("time"))
     for row in result.rows:
         symbol = normalize_symbol(row.get("productCode"))
         if not symbol:
             continue
-        db.add(CapitalFlowDaily(
-            trade_date=trade_date,
-            symbol=symbol,
-            product_code=str(row.get("productCode") or ""),
-            product_name=str(row.get("productName") or ""),
-            amount=safe_float(row.get("price")),
-            source_time=src_time,
-            source=SOURCE,
-            raw_json=json.dumps(row, ensure_ascii=False, default=str),
-            updated_at=datetime.utcnow(),
-        ))
-        saved += 1
+        normalized.append({
+            "symbol": symbol,
+            "product_code": str(row.get("productCode") or ""),
+            "product_name": str(row.get("productName") or ""),
+            "amount": safe_float(row.get("price")),
+            "src_time": src_time,
+            "raw": row,
+        })
+    saved = len(normalized)
+    if saved > 0:
+        db.execute(delete(CapitalFlowDaily).where(CapitalFlowDaily.trade_date == trade_date, CapitalFlowDaily.source == SOURCE))
+        for n in normalized:
+            db.add(CapitalFlowDaily(
+                trade_date=trade_date,
+                symbol=n["symbol"],
+                product_code=n["product_code"],
+                product_name=n["product_name"],
+                amount=n["amount"],
+                source_time=n["src_time"],
+                source=SOURCE,
+                raw_json=json.dumps(n["raw"], ensure_ascii=False, default=str),
+                updated_at=datetime.utcnow(),
+            ))
     finish_crawler_run(run, rows=len(result.rows), saved=saved, error=result.error)
     update_data_gap(db, trade_date, "ALL", "capital_flow", saved, result.error)
     return {"rows": len(result.rows), "saved": saved, "error": result.error}
@@ -69,8 +79,7 @@ def collect_basis(db: Session, trade_date: str, source: QuheSource | None = None
     result = source.fetch_basis()
     archive_fetch_result(db, trade_date=trade_date, exchange="ALL", kind="basis", source=SOURCE, result=result)
     db.add(MarketSnapshot(trade_date=trade_date, exchange="ALL", source=SOURCE, snapshot_type="basis", raw_json=snapshot_json(result)))
-    db.execute(delete(BasisDaily).where(BasisDaily.trade_date == trade_date, BasisDaily.source == SOURCE))
-    saved = 0
+    normalized = []
     for row in result.rows:
         row_date = dash_to_date8(row.get("publishTime")) or trade_date
         if row_date != trade_date:
@@ -78,25 +87,43 @@ def collect_basis(db: Session, trade_date: str, source: QuheSource | None = None
         symbol = normalize_symbol(row.get("productCode"))
         if not symbol:
             continue
-        db.add(BasisDaily(
-            trade_date=trade_date,
-            symbol=symbol,
-            product_code=str(row.get("productCode") or ""),
-            product_name=str(row.get("name") or ""),
-            exchange_name=str(row.get("exchange") or ""),
-            spot_price=safe_float(row.get("price")),
-            main_contract_code=str(row.get("code") or ""),
-            main_price=safe_float(row.get("mainPrice")),
-            basis=safe_float(row.get("basis")),
-            basis_rate=safe_float(row.get("basisRate")),
-            highest=safe_float(row.get("highest")),
-            lowest=safe_float(row.get("lowest")),
-            average=safe_float(row.get("average")),
-            source=SOURCE,
-            raw_json=json.dumps(row, ensure_ascii=False, default=str),
-            updated_at=datetime.utcnow(),
-        ))
-        saved += 1
+        normalized.append({
+            "symbol": symbol,
+            "product_code": str(row.get("productCode") or ""),
+            "product_name": str(row.get("name") or ""),
+            "exchange_name": str(row.get("exchange") or ""),
+            "spot_price": safe_float(row.get("price")),
+            "main_contract_code": str(row.get("code") or ""),
+            "main_price": safe_float(row.get("mainPrice")),
+            "basis": safe_float(row.get("basis")),
+            "basis_rate": safe_float(row.get("basisRate")),
+            "highest": safe_float(row.get("highest")),
+            "lowest": safe_float(row.get("lowest")),
+            "average": safe_float(row.get("average")),
+            "raw": row,
+        })
+    saved = len(normalized)
+    if saved > 0:
+        db.execute(delete(BasisDaily).where(BasisDaily.trade_date == trade_date, BasisDaily.source == SOURCE))
+        for n in normalized:
+            db.add(BasisDaily(
+                trade_date=trade_date,
+                symbol=n["symbol"],
+                product_code=n["product_code"],
+                product_name=n["product_name"],
+                exchange_name=n["exchange_name"],
+                spot_price=n["spot_price"],
+                main_contract_code=n["main_contract_code"],
+                main_price=n["main_price"],
+                basis=n["basis"],
+                basis_rate=n["basis_rate"],
+                highest=n["highest"],
+                lowest=n["lowest"],
+                average=n["average"],
+                source=SOURCE,
+                raw_json=json.dumps(n["raw"], ensure_ascii=False, default=str),
+                updated_at=datetime.utcnow(),
+            ))
     finish_crawler_run(run, rows=len(result.rows), saved=saved, error=result.error)
     update_data_gap(db, trade_date, "ALL", "basis", saved, result.error)
     return {"rows": len(result.rows), "saved": saved, "error": result.error}
@@ -163,8 +190,7 @@ def collect_warehouse_receipts(db: Session, trade_date: str, source: QuheSource 
     result = source.fetch_warehouse_receipts()
     archive_fetch_result(db, trade_date=trade_date, exchange="ALL", kind="warehouse_receipt", source=SOURCE, result=result)
     db.add(MarketSnapshot(trade_date=trade_date, exchange="ALL", source=SOURCE, snapshot_type="warehouse_receipt", raw_json=snapshot_json(result)))
-    db.execute(delete(WarehouseReceiptDaily).where(WarehouseReceiptDaily.trade_date == trade_date, WarehouseReceiptDaily.source == SOURCE))
-    saved = 0
+    normalized = []
     for row in result.rows:
         row_date = dash_to_date8(row.get("day")) or trade_date
         if row_date != trade_date:
@@ -172,20 +198,33 @@ def collect_warehouse_receipts(db: Session, trade_date: str, source: QuheSource 
         symbol = normalize_symbol(row.get("type"))
         if not symbol:
             continue
-        db.add(WarehouseReceiptDaily(
-            trade_date=trade_date,
-            symbol=symbol,
-            product_code=str(row.get("type") or ""),
-            product_name=str(row.get("productName") or ""),
-            receipt_number=safe_float(row.get("receiptNumber")),
-            increase_number=safe_float(row.get("increaseNumber")),
-            increase_ratio=safe_float(row.get("increaseRatio")),
-            hand_number=safe_float(row.get("handNumber")),
-            source=SOURCE,
-            raw_json=json.dumps(row, ensure_ascii=False, default=str),
-            updated_at=datetime.utcnow(),
-        ))
-        saved += 1
+        normalized.append({
+            "symbol": symbol,
+            "product_code": str(row.get("type") or ""),
+            "product_name": str(row.get("productName") or ""),
+            "receipt_number": safe_float(row.get("receiptNumber")),
+            "increase_number": safe_float(row.get("increaseNumber")),
+            "increase_ratio": safe_float(row.get("increaseRatio")),
+            "hand_number": safe_float(row.get("handNumber")),
+            "raw": row,
+        })
+    saved = len(normalized)
+    if saved > 0:
+        db.execute(delete(WarehouseReceiptDaily).where(WarehouseReceiptDaily.trade_date == trade_date, WarehouseReceiptDaily.source == SOURCE))
+        for n in normalized:
+            db.add(WarehouseReceiptDaily(
+                trade_date=trade_date,
+                symbol=n["symbol"],
+                product_code=n["product_code"],
+                product_name=n["product_name"],
+                receipt_number=n["receipt_number"],
+                increase_number=n["increase_number"],
+                increase_ratio=n["increase_ratio"],
+                hand_number=n["hand_number"],
+                source=SOURCE,
+                raw_json=json.dumps(n["raw"], ensure_ascii=False, default=str),
+                updated_at=datetime.utcnow(),
+            ))
     finish_crawler_run(run, rows=len(result.rows), saved=saved, error=result.error)
     update_data_gap(db, trade_date, "ALL", "warehouse_receipt", saved, result.error)
     return {"rows": len(result.rows), "saved": saved, "error": result.error}
@@ -311,9 +350,8 @@ def collect_quhe_history_holding(db: Session, trade_date: str, source: QuheSourc
     exchanges = exchanges or {"DCE", "CZCE", "SHFE", "GFEX", "INE"}
     run = start_crawler_run(db, trade_date, "ALL", "quhe_history_holding", source=SOURCE)
     contracts = [c for c in main_quhe_contracts(db, None) if BOARD_TO_EXCHANGE.get(c.board_name) in exchanges]
-    db.execute(delete(QuheHistoryHolding).where(QuheHistoryHolding.trade_date == trade_date, QuheHistoryHolding.source == SOURCE))
+    all_rows: list[tuple[QuheContract, dict[str, Any]]] = []
     fetched = 0
-    saved = 0
     errors: list[str] = []
     failed_contracts: list[tuple[QuheContract, str]] = []
     for contract in contracts:
@@ -322,51 +360,54 @@ def collect_quhe_history_holding(db: Session, trade_date: str, source: QuheSourc
         if result.error:
             failed_contracts.append((contract, result.error))
             continue
-        saved += save_history_rows(db, trade_date, contract, result.rows)
+        for row in result.rows:
+            all_rows.append((contract, row))
         fetched += len(result.rows)
 
-    # A few endpoints return HTTP 666 during burst fetches but succeed moments later.
-    # Retry failed contracts in a slower second pass instead of marking the whole run failed.
     for contract, first_error in failed_contracts:
         time.sleep(0.8)
         result = source.fetch_history_holding(contract.variety_code, limit=20)
         if result.error:
             errors.append(f"{contract.variety_code}: {result.error or first_error}")
             continue
-        saved += save_history_rows(db, trade_date, contract, result.rows)
+        for row in result.rows:
+            all_rows.append((contract, row))
         fetched += len(result.rows)
+
+    saved = 0
+    if all_rows:
+        db.execute(delete(QuheHistoryHolding).where(QuheHistoryHolding.trade_date == trade_date, QuheHistoryHolding.source == SOURCE))
+        for contract, row in all_rows:
+            saved += _save_history_row(db, trade_date, contract, row)
     error_text = "; ".join(errors[:8]) if errors else None
     finish_crawler_run(run, rows=fetched, saved=saved, error=error_text)
     update_data_gap(db, trade_date, "ALL", "quhe_history_holding", saved, error_text)
     return {"contracts": len(contracts), "rows": fetched, "saved": saved, "error": error_text}
 
 
-def save_history_rows(db: Session, trade_date: str, contract: QuheContract, rows: list[dict[str, Any]]) -> int:
+def _save_history_row(db: Session, trade_date: str, contract: QuheContract, row: dict[str, Any]) -> int:
     exchange = BOARD_TO_EXCHANGE.get(contract.board_name, "")
-    saved = 0
-    for row in rows:
-        row_date = date8_from_ms(row.get("date"))
-        if row_date != trade_date:
-            continue
-        long_total = safe_float(row.get("manyTo"))
-        short_total = safe_float(row.get("emptyTo"))
-        db.add(QuheHistoryHolding(
-            trade_date=trade_date,
-            symbol=normalize_symbol(contract.product_code),
-            product_code=contract.product_code,
-            product_name=contract.product_name,
-            exchange=exchange,
-            symbol_code=contract.variety_code,
-            symbol_name=contract.variety_name,
-            long_total=long_total,
-            short_total=short_total,
-            net_total=(long_total or 0) - (short_total or 0),
-            source=SOURCE,
-            raw_json=json.dumps(row, ensure_ascii=False, default=str),
-            updated_at=datetime.utcnow(),
-        ))
-        saved += 1
-    return saved
+    row_date = date8_from_ms(row.get("date"))
+    if row_date != trade_date:
+        return 0
+    long_total = safe_float(row.get("manyTo"))
+    short_total = safe_float(row.get("emptyTo"))
+    db.add(QuheHistoryHolding(
+        trade_date=trade_date,
+        symbol=normalize_symbol(contract.product_code),
+        product_code=contract.product_code,
+        product_name=contract.product_name,
+        exchange=exchange,
+        symbol_code=contract.variety_code,
+        symbol_name=contract.variety_name,
+        long_total=long_total,
+        short_total=short_total,
+        net_total=(long_total or 0) - (short_total or 0),
+        source=SOURCE,
+        raw_json=json.dumps(row, ensure_ascii=False, default=str),
+        updated_at=datetime.utcnow(),
+    ))
+    return 1
 
 
 BOARD_TO_EXCHANGE = {
