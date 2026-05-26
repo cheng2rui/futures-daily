@@ -292,6 +292,22 @@
             <pre>{{ JSON.stringify(firstParserResult.sample || [], null, 2) }}</pre>
           </div>
         </div>
+        <div v-if="replayResult.promotion_guard" class="promotion-guard" :class="replayResult.promotion_guard.allowed ? 'pass' : 'blocked'">
+          <div class="parser-head">
+            <b>Promotion Guard · {{ replayResult.promotion_guard.allowed ? 'PASS' : 'BLOCKED' }}</b>
+            <span>{{ replayResult.promotion_guard.summary }}</span>
+          </div>
+          <div class="replay-stats">
+            <span>输入 {{ replayResult.promotion_guard.metrics?.input_rows ?? 0 }}</span>
+            <span>解析 {{ replayResult.promotion_guard.metrics?.parsed_rows ?? 0 }}</span>
+            <span>成功率 {{ replayResult.promotion_guard.metrics?.success_rate ?? 0 }}%</span>
+            <span>错误率 {{ replayResult.promotion_guard.metrics?.error_rate ?? 0 }}%</span>
+          </div>
+          <div v-if="replayResult.promotion_guard.reasons?.length" class="guard-reasons">
+            <span v-for="reason in replayResult.promotion_guard.reasons" :key="reason.code">{{ reason.message }}</span>
+          </div>
+          <div class="op-tail">{{ replayResult.promotion_guard.next_action }}</div>
+        </div>
         <details v-if="firstParserResult?.errors?.length" class="parser-errors">
           <summary>查看 parser dry-run 错误 {{ firstParserResult.errors.length }} 条</summary>
           <pre>{{ JSON.stringify(firstParserResult.errors, null, 2) }}</pre>
@@ -700,6 +716,11 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .replay-result { margin-top:14px; border:1px solid #e8edf5; border-radius:14px; padding:14px; background:#fbfdff; }
 .replay-head, .parser-head { display:flex; justify-content:space-between; gap:12px; color:#334155; }
 .parser-dry-run { margin-top:12px; padding:12px; border-radius:14px; border:1px solid #dbeafe; background:#f8fbff; display:grid; gap:10px; }
+.promotion-guard { padding:11px; border-radius:12px; display:grid; gap:8px; }
+.promotion-guard.pass { border:1px solid #bbf7d0; background:#f0fdf4; }
+.promotion-guard.blocked { border:1px solid #fed7aa; background:#fff7ed; }
+.guard-reasons { display:grid; gap:5px; color:#9a3412; font-size:12px; }
+.guard-reasons span { background:#ffedd5; border:1px solid #fed7aa; border-radius:8px; padding:6px 8px; }
 .parser-head b { color:#1d4ed8; }
 .parser-head span { color:#64748b; font-size:13px; }
 .parser-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }

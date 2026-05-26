@@ -85,6 +85,8 @@ def check() -> None:
         assert browser_result["stats"]["parser_candidate_confidence"] in {"medium", "high"}
         assert browser_result["parser_dry_run"]["dry_run"] is True
         assert "parsed_rows" in browser_result["parser_dry_run"]
+        assert browser_result["promotion_guard"]["allowed"] is False
+        assert browser_result["stats"]["promotion_allowed"] is False
     finally:
         db.close()
 
