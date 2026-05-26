@@ -13,6 +13,7 @@ from app.services.gap_analysis import build_gap_analysis
 from app.services.quhe_collector import collect_quhe_enhancements
 from app.services.raw_archive import list_archives, read_archive, source_file_item
 from app.services.raw_replay import replay_source_file
+from app.services.browser.official_probe import probe_official_page, official_probe_url
 from app.services.trading_day import normalize_trade_date
 
 router = APIRouter(prefix="/api/dataset", tags=["dataset"])
@@ -110,6 +111,19 @@ def get_raw_archive(file_id: int, db: Session = Depends(get_db)):
 @router.post("/raw-archives/{file_id}/replay")
 def replay_raw_archive(file_id: int, sample_limit: int = 10, db: Session = Depends(get_db)):
     return replay_source_file(db, file_id, sample_limit=sample_limit)
+
+
+@router.post("/browser-probe/{trade_date}/{exchange}")
+def run_browser_probe(
+    trade_date: str,
+    exchange: str,
+    kind: str = "seat_rank",
+    url: str | None = None,
+    db: Session = Depends(get_db),
+):
+    normalized = normalize_trade_date(trade_date)
+    target = url or official_probe_url(exchange)
+    return probe_official_page(db, trade_date=normalized, exchange=exchange, kind=kind, url=target)
 
 
 @router.get("/gaps")

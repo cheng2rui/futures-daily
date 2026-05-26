@@ -16,6 +16,8 @@ SUPPORTED_KINDS: dict[str, Normalizer] = {
     "seat_rank": normalize_seat_row,
 }
 
+BROWSER_PROBE_SUFFIX = "_browser_probe"
+
 
 def replay_source_file(db: Session, file_id: int, *, sample_limit: int = 10) -> dict[str, Any]:
     row = db.scalar(select(SourceFile).where(SourceFile.id == file_id))
@@ -29,6 +31,8 @@ def replay_source_row(row: SourceFile, *, sample_limit: int = 10) -> dict[str, A
     if not loaded.get("exists"):
         return {"file": source_file_item(row), "status": "missing_file", "error": "archive file not found"}
     payload = loaded.get("payload")
+    if row.kind.endswith(BROWSER_PROBE_SUFFIX):
+        return replay_browser_probe(row, payload, sample_limit=sample_limit)
     rows = extract_rows(payload)
     normalizer = SUPPORTED_KINDS.get(row.kind)
     if not normalizer:
@@ -73,6 +77,64 @@ def replay_source_row(row: SourceFile, *, sample_limit: int = 10) -> dict[str, A
         "sample": strip_raw(parsed[:sample_limit]),
         "stats": build_stats(row.kind, parsed),
         "message": "dry-run only; database was not modified",
+    }
+
+
+def replay_browser_probe(row: SourceFile, payload: Any, *, sample_limit: int = 10) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {
+            "file": source_file_item(row),
+            "status": "failed",
+            "kind": row.kind,
+            "dry_run": True,
+            "input_rows": 0,
+            "parsed_rows": 0,
+            "error_count": 1,
+            "errors": [{"error": "browser probe payload is not an object"}],
+            "message": "dry-run only; database was not modified",
+        }
+    html = str(payload.get("html") or "")
+    status = "ok" if payload.get("ok") and html else "failed"
+    signals = browser_probe_signals(html)
+    error = str(payload.get("error") or "")
+    return {
+        "file": source_file_item(row),
+        "status": status,
+        "kind": row.kind,
+        "dry_run": True,
+        "input_rows": 1 if payload else 0,
+        "parsed_rows": 1 if status == "ok" else 0,
+        "skipped_rows": 0 if status == "ok" else 1,
+        "error_count": 0 if status == "ok" else 1,
+        "success_rate": 100.0 if status == "ok" else 0,
+        "errors": [] if status == "ok" else [{"error": error or "browser probe failed"}],
+        "sample": [{
+            "url": payload.get("url") or payload.get("requested_url"),
+            "status": payload.get("status"),
+            "title": payload.get("title"),
+            "html_length": payload.get("html_length") or len(html),
+            "webdriver": payload.get("webdriver"),
+            "user_agent": payload.get("user_agent"),
+            "signals": signals,
+        }][:sample_limit],
+        "stats": {
+            "title": payload.get("title") or "",
+            "html_length": payload.get("html_length") or len(html),
+            "contains_table": signals.get("contains_table", False),
+            "contains_excel": signals.get("contains_excel", False),
+            "contains_position_keywords": signals.get("contains_position_keywords", False),
+        },
+        "message": "browser probe replay only; use exchange-specific parser before promoting rows",
+    }
+
+
+def browser_probe_signals(html: str) -> dict[str, Any]:
+    low = html.lower()
+    return {
+        "contains_table": "<table" in low,
+        "contains_excel": any(x in low for x in [".xls", ".xlsx", "excel"]),
+        "contains_position_keywords": any(x in html for x in ["持仓", "成交", "会员", "排名", "龙虎榜"]),
+        "challenge_like": any(x in low for x in ["captcha", "cloudflare", "challenge", "forbidden", "访问过于频繁"]),
     }
 
 

@@ -41,6 +41,14 @@ def check() -> None:
             source="unit",
             payload={"rows": [{"x": 1}]},
         )
+        browser = archive_payload(
+            db,
+            trade_date="20260523",
+            exchange="DCE",
+            kind="seat_rank_browser_probe",
+            source="unit_browser",
+            payload={"ok": True, "url": "data:text/html", "status": 200, "title": "DCE", "html": "<table><tr><td>持仓排名</td></tr></table>", "webdriver": False, "user_agent": "test"},
+        )
         db.commit()
 
         daily_result = replay_source_file(db, daily.id)
@@ -58,6 +66,12 @@ def check() -> None:
         unsupported_result = replay_source_file(db, unsupported.id)
         assert unsupported_result["status"] == "unsupported"
         assert unsupported_result["input_rows"] == 1
+
+        browser_result = replay_source_file(db, browser.id)
+        assert browser_result["status"] == "ok"
+        assert browser_result["sample"][0]["signals"]["contains_table"] is True
+        assert browser_result["sample"][0]["signals"]["contains_position_keywords"] is True
+        assert browser_result["stats"]["contains_table"] is True
     finally:
         db.close()
 
