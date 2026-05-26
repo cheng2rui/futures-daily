@@ -63,7 +63,7 @@ def score_table_candidate(table: dict[str, Any]) -> dict[str, Any]:
         "matched_keywords": sorted(set(matched)),
         "headers": headers[:20],
         "row_count_estimate": table.get("row_count_estimate", 0),
-        "sample_rows": table.get("sample_rows", [])[:3],
+        "sample_rows": table.get("sample_rows", [])[:20],
         "next_action": "write_dce_html_table_parser" if score >= 6 else "inspect_table_manually",
     }
 

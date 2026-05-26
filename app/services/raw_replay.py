@@ -184,7 +184,7 @@ def extract_html_tables(html: str, *, limit: int = 10) -> list[dict[str, Any]]:
         headers = re.findall(r"(?is)<th\b[^>]*>(.*?)</th>", table_html)
         rows = re.findall(r"(?is)<tr\b[^>]*>(.*?)</tr>", table_html)
         row_samples: list[list[str]] = []
-        for row in rows[:5]:
+        for row in rows[:25]:
             cells = re.findall(r"(?is)<t[dh]\b[^>]*>(.*?)</t[dh]>", row)
             row_samples.append([html_to_text(c) for c in cells[:12]])
         tables.append({
