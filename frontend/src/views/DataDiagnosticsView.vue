@@ -272,7 +272,32 @@
           <span>跳过 {{ replayResult.skipped_rows ?? 0 }}</span>
           <span>错误 {{ replayResult.error_count ?? 0 }}</span>
         </div>
-        <pre>{{ JSON.stringify({ stats: replayResult.stats, sample: replayResult.sample, errors: replayResult.errors }, null, 2) }}</pre>
+        <div v-if="replayResult.parser_dry_run" class="parser-dry-run">
+        <div class="parser-head">
+          <b>DCE Parser Dry-run · {{ statusLabel(replayResult.parser_dry_run.status) }}</b>
+          <span>{{ replayResult.parser_dry_run.message }}</span>
+        </div>
+        <div class="replay-stats">
+          <span>尝试表格 {{ replayResult.parser_dry_run.tables_attempted ?? replayResult.parser_dry_run.input_rows ?? 0 }}</span>
+          <span>解析行 {{ replayResult.parser_dry_run.parsed_rows ?? 0 }}</span>
+          <span>错误 {{ replayResult.parser_dry_run.error_count ?? 0 }}</span>
+        </div>
+        <div v-if="firstParserResult" class="parser-grid">
+          <div>
+            <b>列映射</b>
+            <pre>{{ JSON.stringify(firstParserResult.mapping || {}, null, 2) }}</pre>
+          </div>
+          <div>
+            <b>样例行</b>
+            <pre>{{ JSON.stringify(firstParserResult.sample || [], null, 2) }}</pre>
+          </div>
+        </div>
+        <details v-if="firstParserResult?.errors?.length" class="parser-errors">
+          <summary>查看 parser dry-run 错误 {{ firstParserResult.errors.length }} 条</summary>
+          <pre>{{ JSON.stringify(firstParserResult.errors, null, 2) }}</pre>
+        </details>
+      </div>
+      <pre>{{ JSON.stringify({ stats: replayResult.stats, sample: replayResult.sample, errors: replayResult.errors }, null, 2) }}</pre>
       </div>
     </SectionCard>
   </div>
@@ -319,6 +344,12 @@ const retryPlanSteps = computed(() => retryPlan.value.steps || [])
 const retryPlanSkipped = computed(() => retryPlan.value.skipped || [])
 const retryRuns = computed(() => retryHistory.value.runs || [])
 const diagnostics = computed(() => diagnosticData.value.exchanges || [])
+const firstParserResult = computed(() => {
+  const dry = replayResult.value?.parser_dry_run
+  if (!dry) return null
+  if (Array.isArray(dry.results)) return dry.results[0] || null
+  return dry
+})
 
 function cell(row, kind) { return row?.cells?.[kind] || { status: 'missing', rows: 0, message: '未采集' } }
 function cellLabel(c) {
@@ -667,8 +698,14 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .empty-state.small { padding:18px; } .empty-state.success { color:#15845f; background:#effaf5; border:1px solid #d6f3e5; }
 .empty-cell { text-align:center; color:#94a3b8; padding:24px !important; }
 .replay-result { margin-top:14px; border:1px solid #e8edf5; border-radius:14px; padding:14px; background:#fbfdff; }
-.replay-head { display:flex; justify-content:space-between; gap:12px; color:#334155; }
+.replay-head, .parser-head { display:flex; justify-content:space-between; gap:12px; color:#334155; }
+.parser-dry-run { margin-top:12px; padding:12px; border-radius:14px; border:1px solid #dbeafe; background:#f8fbff; display:grid; gap:10px; }
+.parser-head b { color:#1d4ed8; }
+.parser-head span { color:#64748b; font-size:13px; }
+.parser-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.parser-grid b { color:#334155; }
+.parser-errors summary { cursor:pointer; color:#b45309; font-weight:900; }
 .replay-stats span { background:#eef2ff; color:#3157d5; border:1px solid #dbe3ff; border-radius:999px; padding:5px 9px; font-weight:900; font-size:12px; }
 pre { margin-top:12px; max-height:360px; overflow:auto; background:#0f172a; color:#dbeafe; border-radius:12px; padding:12px; font-size:12px; }
-@media (max-width: 980px) { .kpi-row, .exchange-grid, .source-grid, .run-history, .change-row { grid-template-columns:1fr; } .page-head, .head-actions, .source-health-head, .retry-head, .history-head { flex-direction:column; align-items:stretch; } }
+@media (max-width: 980px) { .kpi-row, .exchange-grid, .source-grid, .run-history, .change-row, .parser-grid { grid-template-columns:1fr; } .page-head, .head-actions, .source-health-head, .retry-head, .history-head { flex-direction:column; align-items:stretch; } }
 </style>
