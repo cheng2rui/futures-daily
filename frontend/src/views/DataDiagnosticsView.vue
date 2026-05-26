@@ -254,7 +254,10 @@
               <td>{{ row.rows }}</td>
               <td>{{ fmtBytes(row.size_bytes) }}</td>
               <td class="note-cell">{{ row.error || '-' }}</td>
-              <td><button class="mini-action" :disabled="replaying === row.id" @click="replay(row)">{{ replaying === row.id ? '重放中...' : 'Replay' }}</button></td>
+              <td>
+                <button class="mini-action" :disabled="replaying === row.id" @click="replay(row)">{{ replaying === row.id ? '处理中...' : 'Replay' }}</button>
+                <button v-if="row.kind?.endsWith('_browser_probe')" class="mini-action probe" :disabled="replaying === row.id" @click="loadPromotionPreview(row)">Preview</button>
+              </td>
             </tr>
             <tr v-if="!archives.length"><td class="empty-cell" colspan="8">暂无 raw archive</td></tr>
           </tbody>
@@ -315,6 +318,21 @@
       </div>
       <pre>{{ JSON.stringify({ stats: replayResult.stats, sample: replayResult.sample, errors: replayResult.errors }, null, 2) }}</pre>
       </div>
+      <div v-if="promotionPreview" class="promotion-preview" :class="promotionPreview.status">
+        <div class="parser-head">
+          <b>Promotion Preview · {{ promotionPreview.status }}</b>
+          <span>{{ promotionPreview.message }}</span>
+        </div>
+        <div class="replay-stats">
+          <span>预览行 {{ promotionPreview.preview_count ?? 0 }}</span>
+          <span>会写库 {{ promotionPreview.would_write ? 'YES' : 'NO' }}</span>
+          <span>Guard {{ promotionPreview.promotion_guard?.allowed ? 'PASS' : 'BLOCKED' }}</span>
+        </div>
+        <div v-if="promotionPreview.promotion_guard?.reasons?.length" class="guard-reasons">
+          <span v-for="reason in promotionPreview.promotion_guard.reasons" :key="reason.code">{{ reason.message }}</span>
+        </div>
+        <pre>{{ JSON.stringify({ guard: promotionPreview.promotion_guard, rows: promotionPreview.preview_rows }, null, 2) }}</pre>
+      </div>
     </SectionCard>
   </div>
 </template>
@@ -342,6 +360,7 @@ const archives = ref([])
 const archiveExchange = ref('')
 const archiveKind = ref('')
 const replayResult = ref(null)
+const promotionPreview = ref(null)
 const replaying = ref(null)
 const runningAction = ref('')
 const loadingPlan = ref(false)
@@ -439,6 +458,7 @@ async function loadArchives() {
 async function replay(row) {
   replaying.value = row.id
   replayResult.value = null
+  promotionPreview.value = null
   try {
     const { data } = await api.post(`/dataset/raw-archives/${row.id}/replay`)
     replayResult.value = data
@@ -450,6 +470,26 @@ async function replay(row) {
     }
   } catch (e) {
     error.value = normalizeApiError(e, 'Replay 失败')
+  } finally {
+    replaying.value = null
+  }
+}
+
+async function loadPromotionPreview(row) {
+  if (!row?.id) return
+  replaying.value = row.id
+  promotionPreview.value = null
+  try {
+    const { data } = await api.post(`/dataset/raw-archives/${row.id}/promotion-preview`)
+    promotionPreview.value = data
+    operationResult.value = {
+      summary: data?.status === 'ready' ? `Promotion Preview #${row.id}：预览 ${data.preview_count || 0} 行` : `Promotion Preview #${row.id}：${data?.promotion_guard?.summary || '已阻断'}`,
+      message: data?.message,
+      note: data?.would_write ? '警告：该接口不应写库' : 'preview only，未修改数据库。',
+      coverage_diff: {},
+    }
+  } catch (e) {
+    error.value = normalizeApiError(e, 'Promotion Preview 失败')
   } finally {
     replaying.value = null
   }
@@ -716,6 +756,9 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .replay-result { margin-top:14px; border:1px solid #e8edf5; border-radius:14px; padding:14px; background:#fbfdff; }
 .replay-head, .parser-head { display:flex; justify-content:space-between; gap:12px; color:#334155; }
 .parser-dry-run { margin-top:12px; padding:12px; border-radius:14px; border:1px solid #dbeafe; background:#f8fbff; display:grid; gap:10px; }
+.promotion-preview { margin-top:12px; padding:12px; border-radius:14px; border:1px solid #e2e8f0; background:#fbfdff; display:grid; gap:10px; }
+.promotion-preview.ready { border-color:#bbf7d0; background:#f0fdf4; }
+.promotion-preview.blocked { border-color:#fed7aa; background:#fff7ed; }
 .promotion-guard { padding:11px; border-radius:12px; display:grid; gap:8px; }
 .promotion-guard.pass { border:1px solid #bbf7d0; background:#f0fdf4; }
 .promotion-guard.blocked { border:1px solid #fed7aa; background:#fff7ed; }
