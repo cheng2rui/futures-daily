@@ -92,7 +92,15 @@
             <span>预期：{{ step.expected_effect }}</span>
             <span>风险：{{ step.risk }}</span>
           </div>
-          <button class="mini-action" :disabled="loadingPlan" @click="runRetryStep(step)">执行这一步</button>
+          <div v-if="step.browser_probe" class="browser-probe">
+            <b>{{ step.browser_probe.label }}</b>
+            <span>{{ step.browser_probe.reason }}</span>
+            <em>{{ step.browser_probe.next_step }}</em>
+          </div>
+          <div class="retry-step-actions">
+            <button class="mini-action" :disabled="loadingPlan" @click="runRetryStep(step)">执行这一步</button>
+            <button v-if="step.browser_probe" class="mini-action probe" :disabled="loadingPlan" @click="runBrowserProbe(step)">Browser Probe</button>
+          </div>
         </article>
       </div>
       <details v-if="retryPlanSkipped.length" class="skip-details">
@@ -228,6 +236,7 @@
           <option value="">全部类型</option>
           <option value="daily">日行情</option>
           <option value="seat_rank">席位</option>
+          <option value="seat_rank_browser_probe">席位 Browser Probe</option>
           <option value="basis">基差</option>
           <option value="warehouse_receipt">仓单</option>
         </select>
@@ -469,6 +478,37 @@ async function runRetryStep(step) {
   if (step.type === 'collect_quhe') return runCollectQuhe(step)
 }
 
+async function runBrowserProbe(step) {
+  if (!tradeDate.value || !step?.exchange || !step?.browser_probe) return
+  if (!confirmDanger(`确认用 CloakBrowser 对 ${tradeDate.value} ${step.exchange} 做官方页低频探测？只写 raw archive，不会入库正式席位数据。`)) return
+  loadingPlan.value = true
+  runningAction.value = `${step.exchange}-${step.kind}-browser_probe`
+  error.value = ''
+  notice.value = ''
+  try {
+    const { data } = await api.post(`/dataset/browser-probe/${tradeDate.value}/${step.exchange}`, null, { params: { kind: step.kind } })
+    notice.value = data?.ok ? `${step.exchange} Browser Probe 已归档` : `${step.exchange} Browser Probe 已记录失败归档`
+    operationResult.value = {
+      summary: data?.ok ? `Browser Probe #${data.archive_id}：${data.title || '已抓取'}` : `Browser Probe #${data?.archive_id || '-'}：${data?.error || '探测失败'}`,
+      message: data?.source_file || '',
+      note: '只写 raw archive；请在 Raw Archive 里 Replay 检查页面信号。',
+      coverage_diff: {},
+    }
+    archiveExchange.value = step.exchange
+    archiveKind.value = `${step.kind}_browser_probe`
+    await loadArchives()
+    if (data?.archive_id) {
+      const row = archives.value.find(item => item.id === data.archive_id)
+      if (row) await replay(row)
+    }
+  } catch (e) {
+    error.value = normalizeApiError(e, 'Browser Probe 失败')
+  } finally {
+    runningAction.value = ''
+    loadingPlan.value = false
+  }
+}
+
 async function runRecollectInternal(exchange, kind) {
   if (!tradeDate.value || !exchange || !kind) return
   if (!confirmDanger(`确认补采 ${tradeDate.value} ${exchange} 的${kindLabel(kind)}数据，并重建日报？`)) return
@@ -588,6 +628,11 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .retry-top em { font-style:normal; color:#b45309; background:#fff7ed; border:1px solid #fed7aa; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:950; }
 .retry-step p { margin:0; color:#475569; line-height:1.5; }
 .retry-meta { display:grid; gap:5px; color:#64748b; font-size:12px; }
+.retry-step-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.mini-action.probe { background:#fff7ed; color:#b45309; border-color:#fed7aa; }
+.browser-probe { display:grid; gap:4px; padding:9px 10px; border-radius:11px; border:1px solid #fed7aa; background:#fffaf0; color:#9a3412; font-size:12px; line-height:1.45; }
+.browser-probe b { color:#7c2d12; }
+.browser-probe em { color:#64748b; font-style:normal; }
 .history-head { display:flex; justify-content:space-between; gap:12px; align-items:center; color:#334155; margin-bottom:12px; }
 .history-head b { display:block; color:#0f172a; }
 .history-head span { display:block; margin-top:4px; color:#64748b; font-size:13px; }
