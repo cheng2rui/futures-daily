@@ -79,6 +79,10 @@ def check() -> None:
         assert sample["candidates"]["tables"][0]["headers"] == ["名次", "会员简称", "持买单量"]
         assert sample["candidates"]["tables"][0]["sample_rows"][1][1] == "永安期货"
         assert sample["candidates"]["excel_links"][0]["absolute_url"] == "https://www.dce.com.cn/x/files/rank.xlsx"
+        assert browser_result["candidate_analysis"]["status"] == "candidate_found"
+        assert browser_result["candidate_analysis"]["best_candidate"]["type"] in {"html_table", "download_link"}
+        assert any(item["type"] == "html_table" for item in browser_result["candidate_analysis"]["parser_plan"])
+        assert browser_result["stats"]["parser_candidate_confidence"] in {"medium", "high"}
     finally:
         db.close()
 

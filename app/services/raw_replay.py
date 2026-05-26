@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.models import SourceFile
 from app.services.normalizer import normalize_daily_row, normalize_seat_row
 from app.services.raw_archive import read_archive, source_file_item
+from app.services.browser_probe_analysis import analyze_browser_probe_candidates
 
 Normalizer = Callable[[str, dict[str, Any]], dict[str, Any]]
 
@@ -100,6 +101,7 @@ def replay_browser_probe(row: SourceFile, payload: Any, *, sample_limit: int = 1
     status = "ok" if payload.get("ok") and html else "failed"
     signals = browser_probe_signals(html)
     candidates = browser_probe_candidates(html, base_url=str(payload.get("url") or payload.get("requested_url") or ""), limit=sample_limit)
+    analysis = analyze_browser_probe_candidates(row.exchange, candidates)
     error = str(payload.get("error") or "")
     return {
         "file": source_file_item(row),
@@ -121,7 +123,9 @@ def replay_browser_probe(row: SourceFile, payload: Any, *, sample_limit: int = 1
             "user_agent": payload.get("user_agent"),
             "signals": signals,
             "candidates": candidates,
+            "candidate_analysis": analysis,
         }][:sample_limit],
+        "candidate_analysis": analysis,
         "stats": {
             "title": payload.get("title") or "",
             "html_length": payload.get("html_length") or len(html),
@@ -131,6 +135,8 @@ def replay_browser_probe(row: SourceFile, payload: Any, *, sample_limit: int = 1
             "table_candidates": len(candidates.get("tables", [])),
             "excel_links": len(candidates.get("excel_links", [])),
             "keyword_blocks": len(candidates.get("keyword_blocks", [])),
+            "parser_candidate_status": analysis.get("status"),
+            "parser_candidate_confidence": analysis.get("confidence"),
         },
         "message": "browser probe replay only; use exchange-specific parser before promoting rows",
     }
