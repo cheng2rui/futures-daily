@@ -1,6 +1,6 @@
 {
   "name": "futures-daily-frontend",
-  "version": "0.5.13",
+  "version": "0.5.17",
   "type": "module",
   "scripts": {
     "dev": "vite",
