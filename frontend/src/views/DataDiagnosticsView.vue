@@ -331,7 +331,32 @@
         <div v-if="promotionPreview.promotion_guard?.reasons?.length" class="guard-reasons">
           <span v-for="reason in promotionPreview.promotion_guard.reasons" :key="reason.code">{{ reason.message }}</span>
         </div>
-        <pre>{{ JSON.stringify({ guard: promotionPreview.promotion_guard, rows: promotionPreview.preview_rows }, null, 2) }}</pre>
+        <div v-if="promotionPreviewRows.length" class="preview-table">
+          <table>
+            <thead>
+              <tr>
+                <th>record_id</th><th>rank</th><th>席位</th><th>成交</th><th>成交变化</th><th>多头持仓</th><th>多头变化</th><th>空头持仓</th><th>空头变化</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in promotionPreviewRows" :key="row.record_id">
+                <td class="mono" :title="row.record_id">{{ shortId(row.record_id) }}</td>
+                <td>{{ row.rank ?? '-' }}</td>
+                <td>{{ row.vol_party_name || row.long_party_name || row.short_party_name || '-' }}</td>
+                <td>{{ fmtNum(row.vol) }}</td>
+                <td>{{ fmtSigned(row.vol_chg) }}</td>
+                <td>{{ fmtNum(row.long_open_interest) }}</td>
+                <td>{{ fmtSigned(row.long_open_interest_chg) }}</td>
+                <td>{{ fmtNum(row.short_open_interest) }}</td>
+                <td>{{ fmtSigned(row.short_open_interest_chg) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <details>
+          <summary>查看 promotion preview 原始 JSON</summary>
+          <pre>{{ JSON.stringify({ guard: promotionPreview.promotion_guard, rows: promotionPreview.preview_rows }, null, 2) }}</pre>
+        </details>
       </div>
     </SectionCard>
   </div>
@@ -385,6 +410,7 @@ const firstParserResult = computed(() => {
   if (Array.isArray(dry.results)) return dry.results[0] || null
   return dry
 })
+const promotionPreviewRows = computed(() => promotionPreview.value?.preview_rows || [])
 
 function cell(row, kind) { return row?.cells?.[kind] || { status: 'missing', rows: 0, message: '未采集' } }
 function cellLabel(c) {
@@ -392,7 +418,9 @@ function cellLabel(c) {
   const base = labels[c.status] || '?'
   return ['ok', 'fallback', 'partial'].includes(c.status) && c.rows ? `${base} ${fmtNum(c.rows)}` : base
 }
-function fmtNum(v) { const n = Number(v || 0); if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`; return String(Math.round(n)) }
+function fmtNum(v) { const n = Number(v || 0); if (!Number.isFinite(n) || n === 0) return v === 0 ? '0' : '-'; if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}万`; return String(Math.round(n)) }
+function fmtSigned(v) { const n = Number(v || 0); if (!Number.isFinite(n) || n === 0) return v === 0 ? '0' : '-'; return n > 0 ? `+${fmtNum(n)}` : fmtNum(n) }
+function shortId(v) { const s = String(v || ''); return s.length > 22 ? `${s.slice(0, 18)}…` : s }
 function fmtBytes(v) { const n = Number(v || 0); if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`; if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`; return `${n} B` }
 function fmtDelta(v) { const n = Number(v || 0); return n > 0 ? `+${n}%` : `${n}%` }
 function fmtTime(v) { return v ? String(v).replace('T', ' ').slice(0, 19) : '-' }
@@ -759,6 +787,10 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .promotion-preview { margin-top:12px; padding:12px; border-radius:14px; border:1px solid #e2e8f0; background:#fbfdff; display:grid; gap:10px; }
 .promotion-preview.ready { border-color:#bbf7d0; background:#f0fdf4; }
 .promotion-preview.blocked { border-color:#fed7aa; background:#fff7ed; }
+.preview-table { overflow:auto; border:1px solid #e2e8f0; border-radius:12px; background:#fff; }
+.preview-table table { min-width:980px; }
+.preview-table .mono { font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color:#3157d5; font-size:12px; }
+.promotion-preview details summary { cursor:pointer; color:#334155; font-weight:900; }
 .promotion-guard { padding:11px; border-radius:12px; display:grid; gap:8px; }
 .promotion-guard.pass { border:1px solid #bbf7d0; background:#f0fdf4; }
 .promotion-guard.blocked { border:1px solid #fed7aa; background:#fff7ed; }
