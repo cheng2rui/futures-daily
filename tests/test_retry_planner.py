@@ -28,6 +28,8 @@ def check() -> None:
         dce_seat = next(step for step in plan["steps"] if step["type"] == "recollect" and step["exchange"] == "DCE" and step["kind"] == "seat_rank")
         assert dce_seat["decision"] == "retry_verify_params"
         assert dce_seat["error_category"]["code"] == "empty"
+        assert dce_seat["browser_probe"]["provider"] == "cloakbrowser"
+        assert dce_seat["browser_probe"]["source"] == "dce_official_cloakbrowser"
         assert any(step["type"] == "collect_quhe" and step["decision"] == "retry_enhancement_bundle" for step in plan["steps"])
         assert any(item["exchange"] == "INE" and item["kind"] == "seat_rank" and item["reason_code"] == "not_supported" and item["executable"] is False for item in plan["skipped"])
         ine_seat = next(item for item in plan["skipped"] if item["exchange"] == "INE" and item["kind"] == "seat_rank")

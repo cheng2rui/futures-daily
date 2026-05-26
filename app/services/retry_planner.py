@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.services.coverage_matrix import build_coverage_matrix
 from app.services.error_classifier import classify_record_error
 from app.services.source_health import build_source_health
@@ -63,7 +64,7 @@ def core_step(trade_date: str, exchange: str, kind: str, cell: dict[str, Any], h
     if status == "bad":
         priority += 6
     priority += int(decision.get("priority_delta") or 0)
-    return {
+    step = {
         "type": "recollect",
         "exchange": exchange,
         "kind": kind,
@@ -80,6 +81,10 @@ def core_step(trade_date: str, exchange: str, kind: str, cell: dict[str, Any], h
         "risk": decision.get("risk") or risk_note(source, status, exchange, kind),
         "reason_code": decision.get("reason_code", "retryable"),
     }
+    browser = browser_probe_hint(exchange, kind, category, cell)
+    if browser:
+        step["browser_probe"] = browser
+    return step
 
 
 def enhancement_step(trade_date: str, exchange: str, kind: str, cell: dict[str, Any], health_by_source: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -166,6 +171,33 @@ def recommended_source(exchange: str, kind: str) -> str:
     if exchange == "DCE" and kind == "daily":
         return "dce_sina_fallback"
     return "akshare"
+
+
+def browser_probe_hint(exchange: str, kind: str, category: dict[str, Any], cell: dict[str, Any]) -> dict[str, Any] | None:
+    """Describe the optional CloakBrowser official-page probe for seat gaps.
+
+    v0.5.13 only wires the infrastructure and planner hint. The browser adapter
+    must still archive raw official responses before parser replay promotes data.
+    """
+    if kind != "seat_rank" or exchange == "INE":
+        return None
+    cfg = get_settings().browser
+    if not cfg.enabled or cfg.provider != "cloakbrowser":
+        return None
+    code = category.get("code") or "unknown"
+    if code not in {"anti_bot", "timeout", "network", "empty", "missing_without_error", "unknown"} and cell.get("status") not in {"missing", "failed", "partial"}:
+        return None
+    return {
+        "available": True,
+        "source": f"{exchange.lower()}_official_cloakbrowser",
+        "provider": "cloakbrowser",
+        "label": "CloakBrowser 官方页低频探测",
+        "stage": "v0.5.13 infrastructure",
+        "python_path": cfg.python_path,
+        "binary_path": cfg.binary_path,
+        "reason": "常规席位源缺失/失败时，可用 CloakBrowser 抓取官方页面原始响应，先写 raw_archive，再做 parser replay。",
+        "next_step": "实现对应 exchange browser source adapter 后再加入 Retry Runner 自动执行。",
+    }
 
 
 def enhancement_source(kind: str) -> str:
@@ -285,7 +317,7 @@ def skipped_breakdown(skipped: list[dict[str, Any]]) -> dict[str, Any]:
 
 def risk_note(source: str, status: str, exchange: str, kind: str) -> str:
     if exchange == "DCE" and kind == "seat_rank":
-        return "DCE 席位公开源长期不稳定，重试可能仍失败；需要商业授权源兜底。"
+        return "DCE 席位公开源长期不稳定，重试可能仍失败；后续优先用 CloakBrowser 官方页低频探测或商业授权源兜底。"
     if status == "bad":
         return f"推荐源 {source} 当前健康较差，建议执行后检查 raw archive 和 coverage diff。"
     return "低风险：只做采集/补采，不伪造缺失数据。"

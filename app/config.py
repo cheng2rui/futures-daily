@@ -79,6 +79,15 @@ class AssistantConfig(BaseModel):
     features: AssistantFeaturesConfig = Field(default_factory=AssistantFeaturesConfig)
 
 
+class BrowserAutomationConfig(BaseModel):
+    enabled: bool = True
+    provider: str = "cloakbrowser"
+    python_path: str = "/Users/rey/.openclaw/workspace/.venvs/cloakbrowser/bin/python"
+    binary_path: str = "/Users/rey/.cloakbrowser/chromium-145.0.7632.109.2/Chromium.app/Contents/MacOS/Chromium"
+    headless: bool = True
+    timeout_seconds: int = 60
+
+
 class Settings(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
@@ -88,6 +97,7 @@ class Settings(BaseModel):
     seat_archive: SeatArchiveConfig = Field(default_factory=SeatArchiveConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     assistant: AssistantConfig = Field(default_factory=AssistantConfig)
+    browser: BrowserAutomationConfig = Field(default_factory=BrowserAutomationConfig)
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
