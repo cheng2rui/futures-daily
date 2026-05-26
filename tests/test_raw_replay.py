@@ -47,7 +47,7 @@ def check() -> None:
             exchange="DCE",
             kind="seat_rank_browser_probe",
             source="unit_browser",
-            payload={"ok": True, "url": "data:text/html", "status": 200, "title": "DCE", "html": "<table><tr><td>持仓排名</td></tr></table>", "webdriver": False, "user_agent": "test"},
+            payload={"ok": True, "url": "https://www.dce.com.cn/x/y/", "status": 200, "title": "DCE", "html": "<a href='../files/rank.xlsx'>会员持仓排名 Excel</a><table><tr><th>名次</th><th>会员简称</th><th>持买单量</th></tr><tr><td>1</td><td>永安期货</td><td>100</td></tr></table><p>成交 持仓 排名</p>", "webdriver": False, "user_agent": "test"},
         )
         db.commit()
 
@@ -69,9 +69,16 @@ def check() -> None:
 
         browser_result = replay_source_file(db, browser.id)
         assert browser_result["status"] == "ok"
-        assert browser_result["sample"][0]["signals"]["contains_table"] is True
-        assert browser_result["sample"][0]["signals"]["contains_position_keywords"] is True
+        sample = browser_result["sample"][0]
+        assert sample["signals"]["contains_table"] is True
+        assert sample["signals"]["contains_position_keywords"] is True
         assert browser_result["stats"]["contains_table"] is True
+        assert browser_result["stats"]["table_candidates"] == 1
+        assert browser_result["stats"]["excel_links"] == 1
+        assert browser_result["stats"]["keyword_blocks"] >= 1
+        assert sample["candidates"]["tables"][0]["headers"] == ["名次", "会员简称", "持买单量"]
+        assert sample["candidates"]["tables"][0]["sample_rows"][1][1] == "永安期货"
+        assert sample["candidates"]["excel_links"][0]["absolute_url"] == "https://www.dce.com.cn/x/files/rank.xlsx"
     finally:
         db.close()
 

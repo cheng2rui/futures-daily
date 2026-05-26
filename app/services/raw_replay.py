@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from typing import Any, Callable
+import html as html_lib
+import re
+from urllib.parse import urljoin
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -96,6 +99,7 @@ def replay_browser_probe(row: SourceFile, payload: Any, *, sample_limit: int = 1
     html = str(payload.get("html") or "")
     status = "ok" if payload.get("ok") and html else "failed"
     signals = browser_probe_signals(html)
+    candidates = browser_probe_candidates(html, base_url=str(payload.get("url") or payload.get("requested_url") or ""), limit=sample_limit)
     error = str(payload.get("error") or "")
     return {
         "file": source_file_item(row),
@@ -116,6 +120,7 @@ def replay_browser_probe(row: SourceFile, payload: Any, *, sample_limit: int = 1
             "webdriver": payload.get("webdriver"),
             "user_agent": payload.get("user_agent"),
             "signals": signals,
+            "candidates": candidates,
         }][:sample_limit],
         "stats": {
             "title": payload.get("title") or "",
@@ -123,6 +128,9 @@ def replay_browser_probe(row: SourceFile, payload: Any, *, sample_limit: int = 1
             "contains_table": signals.get("contains_table", False),
             "contains_excel": signals.get("contains_excel", False),
             "contains_position_keywords": signals.get("contains_position_keywords", False),
+            "table_candidates": len(candidates.get("tables", [])),
+            "excel_links": len(candidates.get("excel_links", [])),
+            "keyword_blocks": len(candidates.get("keyword_blocks", [])),
         },
         "message": "browser probe replay only; use exchange-specific parser before promoting rows",
     }
@@ -136,6 +144,96 @@ def browser_probe_signals(html: str) -> dict[str, Any]:
         "contains_position_keywords": any(x in html for x in ["持仓", "成交", "会员", "排名", "龙虎榜"]),
         "challenge_like": any(x in low for x in ["captcha", "cloudflare", "challenge", "forbidden", "访问过于频繁"]),
     }
+
+
+def browser_probe_candidates(html: str, *, base_url: str = "", limit: int = 10) -> dict[str, Any]:
+    """Extract parser candidates from a browser probe HTML snapshot.
+
+    This is intentionally heuristic and dry-run only: it points future
+    exchange-specific parsers at promising table/link/text regions without
+    normalizing them into official rows yet.
+    """
+    return {
+        "tables": extract_html_tables(html, limit=limit),
+        "excel_links": extract_excel_links(html, base_url=base_url, limit=limit),
+        "keyword_blocks": extract_keyword_blocks(html, limit=limit),
+    }
+
+
+def extract_html_tables(html: str, *, limit: int = 10) -> list[dict[str, Any]]:
+    tables: list[dict[str, Any]] = []
+    for idx, match in enumerate(re.finditer(r"(?is)<table\b.*?</table>", html)):
+        table_html = match.group(0)
+        text = html_to_text(table_html)
+        headers = re.findall(r"(?is)<th\b[^>]*>(.*?)</th>", table_html)
+        rows = re.findall(r"(?is)<tr\b[^>]*>(.*?)</tr>", table_html)
+        row_samples: list[list[str]] = []
+        for row in rows[:5]:
+            cells = re.findall(r"(?is)<t[dh]\b[^>]*>(.*?)</t[dh]>", row)
+            row_samples.append([html_to_text(c) for c in cells[:12]])
+        tables.append({
+            "index": idx,
+            "char_start": match.start(),
+            "char_end": match.end(),
+            "headers": [html_to_text(x) for x in headers[:20]],
+            "row_count_estimate": len(rows),
+            "sample_rows": row_samples,
+            "text_preview": text[:600],
+            "contains_position_keywords": any(x in text for x in ["持仓", "成交", "会员", "排名", "龙虎榜"]),
+        })
+        if len(tables) >= limit:
+            break
+    return tables
+
+
+def extract_excel_links(html: str, *, base_url: str = "", limit: int = 10) -> list[dict[str, Any]]:
+    links: list[dict[str, Any]] = []
+    for match in re.finditer(r"(?is)<a\b([^>]*?)>(.*?)</a>", html):
+        attrs, label_html = match.group(1), match.group(2)
+        href_match = re.search(r'''(?is)href\s*=\s*["']([^"']+)["']''', attrs)
+        if not href_match:
+            continue
+        href = html_lib.unescape(href_match.group(1).strip())
+        label = html_to_text(label_html)
+        haystack = f"{href} {label}".lower()
+        if not any(x in haystack for x in [".xls", ".xlsx", "excel", "csv", "持仓", "排名"]):
+            continue
+        links.append({
+            "href": href,
+            "absolute_url": urljoin(base_url, href) if base_url else href,
+            "label": label,
+            "char_start": match.start(),
+        })
+        if len(links) >= limit:
+            break
+    return links
+
+
+def extract_keyword_blocks(html: str, *, limit: int = 10) -> list[dict[str, Any]]:
+    text = html_to_text(html)
+    keywords = ["持仓", "成交", "会员", "排名", "龙虎榜", "多头", "空头", "期货公司"]
+    blocks: list[dict[str, Any]] = []
+    seen: set[tuple[int, int]] = set()
+    for kw in keywords:
+        for match in re.finditer(re.escape(kw), text):
+            start = max(0, match.start() - 120)
+            end = min(len(text), match.end() + 220)
+            key = (start, end)
+            if key in seen:
+                continue
+            seen.add(key)
+            blocks.append({"keyword": kw, "char_start": start, "char_end": end, "text": text[start:end]})
+            if len(blocks) >= limit:
+                return blocks
+    return blocks
+
+
+def html_to_text(raw: str) -> str:
+    text = re.sub(r"(?is)<script\b.*?</script>|<style\b.*?</style>", " ", raw)
+    text = re.sub(r"(?is)<br\s*/?>|</p>|</tr>|</td>|</th>", " ", text)
+    text = re.sub(r"(?is)<[^>]+>", " ", text)
+    text = html_lib.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def extract_rows(payload: Any) -> list[Any]:
