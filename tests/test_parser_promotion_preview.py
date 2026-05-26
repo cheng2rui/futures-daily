@@ -36,6 +36,9 @@ def check() -> None:
         assert preview["promotion_guard"]["allowed"] is True
         assert preview["preview_count"] >= 5
         assert preview["preview_rows"][0]["vol_party_name"] == "测试期货1"
+        assert preview["preview_rows"][0]["record_id"].startswith("seat_rank_preview:")
+        assert preview["preview_rows"][0]["source_file_id"] == file.id
+        assert preview["preview_rows"][0]["trade_date"] == "20260526"
 
         blocked_file = archive_payload(
             db,
