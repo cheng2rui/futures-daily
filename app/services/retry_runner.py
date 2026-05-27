@@ -138,15 +138,20 @@ def archive_materialization_effect(signals: dict[str, Any], materialized: dict[s
     varieties = sum(int(x.get("varieties") or 0) for x in exchange_rows)
     top = (signals.get("net_delta_top") or [])[:5]
     focus = ((signals.get("focus5") or {}).get("combined_by_variety") or [])[:5]
+    top_samples = [{"name": x.get("displayName") or x.get("name"), "exchange": x.get("exchange"), "netDelta": x.get("netDelta"), "netDir": x.get("netDir")} for x in top]
+    focus_samples = [{"variety": x.get("variety"), "exchange": x.get("exchange"), "netDelta": x.get("netDelta"), "netVol": x.get("netVol")} for x in focus]
     return {
         "source": signals.get("source") or "rsstsx_archive",
         "archive_count": int(signals.get("count") or 0),
+        "rsstsx_varieties": int(signals.get("count") or 0),
         "exchange": target or "ALL",
         "varieties": varieties,
         "with_archive_signal": with_archive,
         "coverage_pct": round(with_archive / varieties * 100, 1) if varieties else 0,
-        "top_net_delta": [{"name": x.get("displayName") or x.get("name"), "exchange": x.get("exchange"), "netDelta": x.get("netDelta"), "netDir": x.get("netDir")} for x in top],
-        "focus5": [{"variety": x.get("variety"), "exchange": x.get("exchange"), "netDelta": x.get("netDelta"), "netVol": x.get("netVol")} for x in focus],
+        "top_net_delta": top_samples,
+        "top_net_delta_samples": top_samples,
+        "focus5": focus_samples,
+        "focus5_samples": focus_samples,
         "summary": f"rsstsx 归档 {int(signals.get('count') or 0)} 个品种；{target or '全市场'} 物化结构信号 {with_archive}/{varieties}。",
     }
 

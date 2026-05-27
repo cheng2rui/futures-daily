@@ -88,10 +88,10 @@
             <div v-if="archiveEffects(job).length" class="archive-effect-list">
               <article v-for="effect in archiveEffects(job)" :key="`${job.id}-${effect.exchange}-${effect.source}`" class="archive-effect-card">
                 <b>{{ effect.summary }}</b>
-                <span>覆盖 {{ effect.coverage_pct }}%｜来源 {{ effect.source }}｜归档 {{ effect.rsstsx_varieties ?? 0 }} 个品种｜物化 {{ effect.with_archive_signal ?? 0 }}/{{ effect.varieties ?? 0 }}</span>
-                <div v-if="effect.top_net_delta_samples?.length || effect.focus5_samples?.length" class="mini-signal-list">
-                  <em v-for="item in effect.top_net_delta_samples || []" :key="`n-${item.symbol}-${item.netDelta}`">{{ item.symbol }} {{ fmtSigned(item.netDelta) }}</em>
-                  <em v-for="item in effect.focus5_samples || []" :key="`f-${item.symbol}-${item.focus5}`">{{ item.symbol }} Focus5 {{ item.focus5 }}</em>
+                <span>覆盖 {{ effect.coverage_pct }}%｜来源 {{ effect.source }}｜归档 {{ effect.rsstsx_varieties ?? effect.archive_count ?? 0 }} 个品种｜物化 {{ effect.with_archive_signal ?? 0 }}/{{ effect.varieties ?? 0 }}</span>
+                <div v-if="effectTopSamples(effect).length || effectFocusSamples(effect).length" class="mini-signal-list">
+                  <em v-for="item in effectTopSamples(effect)" :key="`n-${item.name || item.symbol}-${item.netDelta}`">{{ item.name || item.symbol }} {{ fmtSigned(item.netDelta) }}</em>
+                  <em v-for="item in effectFocusSamples(effect)" :key="`f-${item.variety || item.symbol}-${item.netDelta || item.netVol}`">{{ item.variety || item.symbol }} Focus5 {{ fmtSigned(item.netDelta ?? item.netVol) }}</em>
                 </div>
               </article>
             </div>
@@ -198,6 +198,12 @@ function archiveEffects(job) {
 function archiveEffectSummary(effect) {
   if (!effect) return ''
   return effect.summary || `席位归档物化 ${effect.with_archive_signal ?? 0}/${effect.varieties ?? 0}，覆盖 ${effect.coverage_pct ?? '-'}%`
+}
+function effectTopSamples(effect) {
+  return (effect?.top_net_delta_samples || effect?.top_net_delta || []).slice(0, 5)
+}
+function effectFocusSamples(effect) {
+  return (effect?.focus5_samples || effect?.focus5 || []).slice(0, 5)
 }
 function fmtSigned(v) {
   const n = Number(v || 0)

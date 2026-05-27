@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
-from app.services.retry_runner import run_retry_plan
+from app.services.retry_runner import archive_materialization_effect, run_retry_plan
 
 
 def check() -> None:
@@ -68,6 +68,30 @@ def check() -> None:
         db.close()
 
 
+def check_archive_materialization_effect_aliases() -> None:
+    signals = {
+        "source": "rsstsx_archive",
+        "count": 12,
+        "net_delta_top": [{"displayName": "豆粕", "exchange": "DCE", "netDelta": -123, "netDir": "偏空"}],
+        "focus5": {"combined_by_variety": [{"variety": "M", "exchange": "DCE", "netDelta": -321, "netVol": 88}]},
+    }
+    materialized = {"summary": {"exchanges": [{"exchange": "DCE", "varieties": 20, "with_archive_signal": 8}, {"exchange": "SHFE", "varieties": 10, "with_archive_signal": 2}]}}
+
+    effect = archive_materialization_effect(signals, materialized, "DCE")
+
+    assert effect["exchange"] == "DCE"
+    assert effect["archive_count"] == 12
+    assert effect["rsstsx_varieties"] == 12
+    assert effect["varieties"] == 20
+    assert effect["with_archive_signal"] == 8
+    assert effect["coverage_pct"] == 40.0
+    assert effect["top_net_delta"] == effect["top_net_delta_samples"]
+    assert effect["focus5"] == effect["focus5_samples"]
+    assert effect["top_net_delta_samples"][0]["name"] == "豆粕"
+    assert "DCE 物化结构信号 8/20" in effect["summary"]
+
+
 if __name__ == "__main__":
     check()
+    check_archive_materialization_effect_aliases()
     print("ok")
