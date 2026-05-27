@@ -98,7 +98,7 @@
 
       <div class="dashboard-toolbar">
         <div>
-          <b>今日看板</b>
+          <b>今日看板<span v-if="activeDashboardMode === 'intraday' && intraday.trade_date"> · {{ formatDate(intraday.trade_date) }}</span></b>
           <span>{{ dashboardEditing ? '拖动卡片调整顺序，取消勾选可隐藏模块。布局会自动保存。' : activeDashboardMode === 'intraday' ? '盘中看最新行情变化、涨跌排行、自选品种和市场热点。' : '复盘看今天发生了什么、哪些品种值得明天继续盯。' }}</span>
         </div>
         <div class="dashboard-actions">
@@ -476,9 +476,9 @@ let dashboardResizeTimer = null
 const draggingCardId = ref('')
 const expandedDashboardCards = ref([])
 const activeDashboardMode = ref(loadDashboardMode())
-const appVersion = ref('0.5.36')
+const appVersion = ref('0.5.37')
 const viewingDate = computed(() => route.query.date ? String(route.query.date) : '')
-const displayDate = computed(() => formatDate(report.value.date || viewingDate.value) || '暂无日期')
+const displayDate = computed(() => formatDate((activeDashboardMode.value === 'intraday' ? intraday.value.trade_date : '') || report.value.date || viewingDate.value) || '暂无日期')
 const isEmptyReport = computed(() => !report.value.date && !report.value.overview?.summary)
 const generateButtonText = computed(() => {
   if (loading.value) return viewingDate.value ? '抓取中...' : '生成中...'

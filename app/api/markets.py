@@ -14,7 +14,7 @@ from app.metadata.variety_meta import get_variety_name
 from app.services.collector import collect_daily_market
 from app.services.news_collector import collect_news_digest, load_latest_news_digest
 from app.services.structure import sector_for
-from app.services.trading_day import normalize_trade_date
+from app.services.trading_day import latest_candidate_trade_date, normalize_trade_date
 
 router = APIRouter(prefix="/api/markets", tags=["markets"])
 
@@ -22,9 +22,6 @@ router = APIRouter(prefix="/api/markets", tags=["markets"])
 def _now_text() -> str:
     return datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M:%S")
 
-
-def _latest_trade_date(db: Session) -> str | None:
-    return db.scalar(select(DailyBar.trade_date).group_by(DailyBar.trade_date).order_by(desc(DailyBar.trade_date)).limit(1))
 
 
 def _empty_intraday(collect_result: dict | None = None) -> dict:
@@ -78,6 +75,10 @@ def _bar_payload(bar: DailyBar, meta: dict[tuple[str, str], Contract]) -> dict:
 def _watch_variety(symbol: str) -> str:
     text = (symbol or "").upper()
     return "".join(ch for ch in text if ch.isalpha())
+
+
+def _has_price(row: dict) -> bool:
+    return any(float(row.get(field) or 0) > 0 for field in ("close", "settlement", "pre_close", "open"))
 
 
 def _main_contracts(rows: list[dict]) -> list[dict]:
@@ -156,7 +157,7 @@ def intraday_snapshot(trade_date: str | None = None, refresh: bool = False, db: 
     """
     if refresh:
         return refresh_intraday_snapshot(trade_date, db)
-    selected_date = normalize_trade_date(trade_date) if trade_date else _latest_trade_date(db)
+    selected_date = normalize_trade_date(trade_date) if trade_date else latest_candidate_trade_date()
     return _build_intraday_snapshot(db, selected_date)
 
 
@@ -174,7 +175,7 @@ def _build_intraday_snapshot(db: Session, selected_date: str | None, collect_res
 
     rows = [_bar_payload(bar, meta) for bar in bars]
     news_digest = load_latest_news_digest(db, selected_date)
-    liquid_rows = [r for r in rows if (r.get("volume") or 0) > 0 and (r.get("close") or 0) > 0]
+    liquid_rows = [r for r in rows if (r.get("volume") or 0) > 0 and _has_price(r)]
     main_rows = _main_contracts(liquid_rows)
     up = sum(1 for r in main_rows if (r.get("change_pct") or 0) > 0)
     down = sum(1 for r in main_rows if (r.get("change_pct") or 0) < 0)
