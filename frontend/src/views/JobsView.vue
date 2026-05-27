@@ -165,8 +165,8 @@ function recollectDetail(data) {
   return parts.join(' / ') || '-'
 }
 function savedRows(result) { return (result?.results || []).reduce((sum, x) => sum + Number(x.saved || 0), 0) }
-function kindLabel(kind) { return ({ daily: '行情', seat_rank: '席位', basis: '基差', warehouse_receipt: '仓单' })[kind] || kind }
-function retryStepLabel(step) { return step?.type === 'collect_quhe' ? '增强源刷新' : `${step?.type || '-'} ${kindLabel(step?.kind)}` }
+function kindLabel(kind) { return ({ daily: '行情', seat_rank: '席位', archive_signal: '席位归档', basis: '基差', warehouse_receipt: '仓单' })[kind] || kind }
+function retryStepLabel(step) { return step?.type === 'collect_quhe' ? '增强源刷新' : step?.type === 'materialize_archive_signal' ? '席位归档物化' : `${step?.type || '-'} ${kindLabel(step?.kind)}` }
 function pctFromX10(v) { return v == null ? '-' : `${(Number(v || 0) / 10).toFixed(1)}%` }
 function runSummaryText(runSummary, fallback = '') {
   const label = ({ complete: '完整 run', partial: '部分 run', error: '错误 run' })[runSummary.status] || runSummary.status || 'run'

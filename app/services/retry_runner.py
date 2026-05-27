@@ -12,6 +12,7 @@ from app.services.coverage_diff import diff_coverage_matrix
 from app.services.coverage_matrix import build_coverage_matrix
 from app.services.data_mart import materialize_variety_dataset
 from app.services.quhe_collector import collect_quhe_enhancements
+from app.sources.rsstsx_archive_source import RsstsxArchiveSource
 from app.services.run_records import complete_state_from_coverage, coverage_counts, run_summary
 from app.services.report_builder import build_report
 from app.services.retry_planner import build_retry_plan
@@ -96,6 +97,15 @@ def run_retry_step(db: Session, trade_date: str, step: dict[str, Any], *, rebuil
             collect = collect_quhe_enhancements(db, trade_date)
             materialized = materialize_variety_dataset(db, trade_date)
             payload = {"collect": collect, "materialized": materialized}
+            if rebuild:
+                report = build_report(db, trade_date)
+                payload["report"] = {"score": report.score, "summary": report.summary}
+        elif step.get("type") == "materialize_archive_signal":
+            signals = RsstsxArchiveSource().fetch_signals(trade_date)
+            if signals.get("status") != "ok":
+                raise ValueError(signals.get("reason") or "rsstsx archive unavailable")
+            materialized = materialize_variety_dataset(db, trade_date)
+            payload = {"signals": {"status": signals.get("status"), "count": signals.get("count"), "source": signals.get("source")}, "materialized": materialized}
             if rebuild:
                 report = build_report(db, trade_date)
                 payload["report"] = {"score": report.score, "summary": report.summary}

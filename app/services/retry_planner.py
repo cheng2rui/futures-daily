@@ -8,9 +8,11 @@ from app.config import get_settings
 from app.services.coverage_matrix import build_coverage_matrix
 from app.services.error_classifier import classify_record_error
 from app.services.source_health import build_source_health
+from app.sources.rsstsx_archive_source import RsstsxArchiveSource
 
 CORE_KINDS = {"daily", "seat_rank"}
 ENHANCEMENT_KINDS = {"capital_flow", "basis", "warehouse_receipt"}
+ARCHIVE_SOURCE = RsstsxArchiveSource()
 
 
 def build_retry_plan(db: Session, trade_date: str) -> dict[str, Any]:
@@ -37,7 +39,8 @@ def build_retry_plan(db: Session, trade_date: str) -> dict[str, Any]:
                 item = enhancement_step(trade_date, exchange, kind, cell, health_by_source)
                 (steps if item.get("executable") else skipped).append(item)
             elif kind == "archive_signal":
-                skipped.append(skip_item(exchange, kind, cell, "archive_dependency"))
+                item = archive_signal_step(trade_date, exchange, kind, cell)
+                (steps if item.get("executable") else skipped).append(item)
 
     steps = merge_enhancement_steps(steps)
     steps.sort(key=lambda x: (x["priority"], x["exchange"], x["kind"]))
@@ -85,6 +88,29 @@ def core_step(trade_date: str, exchange: str, kind: str, cell: dict[str, Any], h
     if browser:
         step["browser_probe"] = browser
     return step
+
+
+def archive_signal_step(trade_date: str, exchange: str, kind: str, cell: dict[str, Any]) -> dict[str, Any]:
+    signals = ARCHIVE_SOURCE.fetch_signals(trade_date)
+    available = signals.get("status") == "ok" and int(signals.get("count") or 0) > 0
+    return {
+        "type": "materialize_archive_signal",
+        "exchange": exchange,
+        "kind": kind,
+        "source": ARCHIVE_SOURCE.name,
+        "source_status": "available" if available else "missing",
+        "priority": 35,
+        "executable": available,
+        "decision": "materialize_archive_signal" if available else "archive_unavailable",
+        "decision_label": "物化席位归档" if available else "跳过：归档不可用",
+        "error_category": classify_record_error(error=signals.get("reason") or cell.get("message") or "archive unavailable", source=ARCHIVE_SOURCE.name, kind=kind),
+        "endpoint": f"POST /api/dataset/materialize/{trade_date}",
+        "reason": f"{exchange} {kind} 当前 {cell.get('status')}：{cell.get('message') or '席位归档未物化'}",
+        "expected_effect": "从 rsstsx 结构化归档物化 Focus5/CR5/多空比/净变化信号，补齐 archive_signal 覆盖。",
+        "risk": "只读本地结构化归档并重建数据集，不抓外部页面，不伪造缺失品种。",
+        "reason_code": "archive_materialize" if available else "archive_dependency",
+        "archive_count": int(signals.get("count") or 0),
+    }
 
 
 def enhancement_step(trade_date: str, exchange: str, kind: str, cell: dict[str, Any], health_by_source: dict[str, dict[str, Any]]) -> dict[str, Any]:
