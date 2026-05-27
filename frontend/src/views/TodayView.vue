@@ -17,6 +17,7 @@
 
     <div v-if="error" class="notice error">{{ error }}</div>
     <div v-else-if="notice" class="notice success">{{ notice }}</div>
+    <div v-else-if="latestState.status === 'stale'" class="notice warning">{{ latestState.message }} {{ latestState.next_action || '' }}</div>
     <div v-else-if="sourceTip" class="notice">{{ sourceTip }}</div>
 
     <MetricGrid
@@ -474,7 +475,7 @@ let dashboardResizeTimer = null
 const draggingCardId = ref('')
 const expandedDashboardCards = ref([])
 const activeDashboardMode = ref(loadDashboardMode())
-const appVersion = ref('0.2.3')
+const appVersion = ref('0.5.30')
 const viewingDate = computed(() => route.query.date ? String(route.query.date) : '')
 const displayDate = computed(() => formatDate(report.value.date || viewingDate.value) || '暂无日期')
 const isEmptyReport = computed(() => !report.value.date && !report.value.overview?.summary)
@@ -514,6 +515,7 @@ const modeDashboardCards = computed(() => dashboardCards.value.filter(card => ca
 const visibleDashboardCards = computed(() => modeDashboardCards.value.filter(card => !hiddenDashboardCards.value.includes(card.id)))
 const dashboardMarket = computed(() => activeDashboardMode.value === 'intraday' ? intraday.value.market || {} : report.value.market || {})
 const reportVersion = computed(() => report.value.meta?.version || '')
+const latestState = computed(() => report.value.meta?.latest_state || {})
 const reportVersionWarning = computed(() => activeDashboardMode.value === 'review' && reportVersion.value && appVersion.value && reportVersion.value !== appVersion.value)
 const watchFocusRows = computed(() => (activeDashboardMode.value === 'intraday' ? intraday.value.watch_symbols || [] : report.value.watch_symbols || []).slice(0, 12))
 const watchRows = computed(() => rows(activeDashboardMode.value === 'intraday' ? intraday.value.watch_symbols : report.value.watch_symbols).slice(0, 14))
@@ -933,6 +935,7 @@ watch([visibleDashboardCards, expandedDashboardCards], async () => { await nextT
 .notice { margin:16px 0; padding:12px 14px; background:#f6f8ff; color:#526184; border:1px solid #e4e9ff; border-radius:12px; }
 .notice.success { background:#f0fff5; color:#0f8a55; border-color:#bfeecf; }
 .notice.error { background:#fff0f0; color:#bd3434; border-color:#ffd6d6; }
+.notice.warning { background:#fff7e6; color:#8a5200; border-color:#ffd591; }
 .daily-workbench { display:grid; grid-template-columns:1.15fr 1fr 1fr .9fr; gap:14px; margin:18px 0; }
 .workbench-card { min-height:132px; border-radius:22px; padding:17px; color:#fff; box-shadow:0 14px 34px rgba(15,23,42,.12); display:flex; flex-direction:column; gap:8px; overflow:hidden; position:relative; }
 .workbench-card::after { content:''; position:absolute; width:140px; height:140px; right:-46px; bottom:-58px; border-radius:999px; background:rgba(255,255,255,.16); }

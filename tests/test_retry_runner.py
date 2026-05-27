@@ -36,6 +36,8 @@ def check() -> None:
             {"summary": {"core_coverage_pct": 30.0, "overall_coverage_pct": 40.0}, "rows": []},
             {"summary": {"core_coverage_pct": 40.0, "overall_coverage_pct": 50.0}, "rows": []},
             {"summary": {"core_coverage_pct": 50.0, "overall_coverage_pct": 60.0}, "rows": []},
+            {"summary": {"core_coverage_pct": 60.0, "overall_coverage_pct": 70.0}, "rows": []},
+            {"summary": {"core_coverage_pct": 70.0, "overall_coverage_pct": 80.0}, "rows": []},
         ]
         with patch("app.services.retry_runner.build_retry_plan", side_effect=[plan, plan]), \
              patch("app.services.retry_runner.build_coverage_matrix", side_effect=matrices), \
@@ -43,7 +45,7 @@ def check() -> None:
              patch("app.services.retry_runner.collect_seat_ranks", return_value={"results": [{"saved": 0, "error": "missing"}]}), \
              patch("app.services.retry_runner.collect_quhe_enhancements", return_value={"results": {"basis": {"saved": 2}}}), \
              patch("app.services.retry_runner.materialize_variety_dataset", return_value={"count": 2}), \
-             patch("app.services.retry_runner.build_report", return_value=type("R", (), {"score": 66.0, "summary": "done"})()), \
+             patch("app.services.retry_runner.build_report", return_value=type("R", (), {"status": "generated", "score": 66.0, "summary": "done"})()), \
              patch("app.services.retry_runner.diff_coverage_matrix", side_effect=[
                  {"summary": "改善 1 项；核心覆盖 +10.0%；综合覆盖 +10.0%", "improved_cells": 1, "regressed_cells": 0},
                  {"summary": "改善 2 项；核心覆盖 +20.0%；综合覆盖 +20.0%", "improved_cells": 2, "regressed_cells": 0},
@@ -59,7 +61,9 @@ def check() -> None:
         assert result["executed"][0]["coverage_diff"]["improved_cells"] == 1
         assert result["executed"][1]["coverage_diff"]["improved_cells"] == 2
         assert result["after_plan"]["summary"]["summary"] == plan["summary"]["summary"]
+        assert result["finalization"]["report"]["status"] == "generated"
         assert "执行 2 步" in result["summary"]
+        assert "已重建日报" in result["summary"]
     finally:
         db.close()
 

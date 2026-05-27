@@ -413,13 +413,42 @@ def build_report(db: Session, trade_date: str) -> Report:
         "action_notes": build_action_notes(gap_analysis),
     }
 
+    no_usable_market_data = len(bars) == 0 or len(main_bars) == 0
+    if no_usable_market_data:
+        no_data_summary = (
+            f"{trade_date} 尚未形成有效期货日报：未找到可用日行情数据。"
+            "请先执行数据诊断/自动补采；若补采仍失败，按覆盖矩阵中的缺口原因复核数据源。"
+        )
+        payload["meta"]["operational_status"] = "no_usable_market_data"
+        payload["meta"]["operational_message"] = no_data_summary
+        payload["overview"].update(
+            {
+                "score": 0,
+                "stage": "无数据",
+                "heat": "无数据｜待补采",
+                "risk": 100,
+                "direction": "无法判断",
+                "summary": no_data_summary,
+            }
+        )
+        payload["risk_flags"] = [no_data_summary, *payload.get("risk_flags", [])]
+        payload["report_brief"] = {
+            "title": f"期货日报 {trade_date}｜未形成有效日报",
+            "conclusion": no_data_summary,
+            "bullets": [
+                {"label": "核心原因", "text": "日行情为空，市场温度、涨跌排行和异动拆解不可用。"},
+                {"label": "下一步", "text": "打开数据诊断页执行 Retry Plan，或手动补采对应交易日行情。"},
+                {"label": "安全提示", "text": "不会用旧数据或缺失数据伪造当天结论。"},
+            ],
+        }
+
     payload["push_digest"] = build_push_digest(payload)
 
     report = db.scalar(select(Report).where(Report.trade_date == trade_date))
     if not report:
         report = Report(trade_date=trade_date)
-    report.status = "generated"
-    report.score = score
+    report.status = "blocked" if no_usable_market_data else "generated"
+    report.score = payload["overview"]["score"]
     report.summary = payload["overview"]["summary"]
     report.report_json = json.dumps(payload, ensure_ascii=False, default=str)
     report.generated_at = datetime.utcnow()

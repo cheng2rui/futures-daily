@@ -43,12 +43,13 @@ def run_retry_plan(db: Session, trade_date: str, *, max_steps: int = 3, stop_on_
             if stop_on_failure and result.get("status") == "failed":
                 break
 
+        finalization = finalize_retry_run(db, trade_date, rebuild=rebuild)
         after_plan = build_retry_plan(db, trade_date)
         failures = [x for x in executed if x.get("status") == "failed"]
         improvements = sum(int((x.get("coverage_diff") or {}).get("improved_cells") or 0) for x in executed)
-        job.status = "failed" if failures and not any(x.get("status") == "success" for x in executed) else "partial" if failures else "success"
-        job.message = runner_summary(executed, improvements, failures)
-        job.result_json = json.dumps({"initial_plan": plan, "executed": executed, "after_plan": after_plan}, ensure_ascii=False, default=str)
+        job.status = retry_job_status(executed, failures, finalization)
+        job.message = runner_summary(executed, improvements, failures, finalization)
+        job.result_json = json.dumps({"initial_plan": plan, "executed": executed, "finalization": finalization, "after_plan": after_plan}, ensure_ascii=False, default=str)
         job.finished_at = datetime.utcnow()
         db.commit()
         return {
@@ -60,6 +61,7 @@ def run_retry_plan(db: Session, trade_date: str, *, max_steps: int = 3, stop_on_
             "initial_plan": plan,
             "executed": executed,
             "after_plan": after_plan,
+            "finalization": finalization,
         }
     except Exception as exc:  # noqa: BLE001
         job.status = "failed"
@@ -115,10 +117,52 @@ def run_retry_step(db: Session, trade_date: str, step: dict[str, Any], *, rebuil
     }
 
 
-def runner_summary(executed: list[dict[str, Any]], improvements: int, failures: list[dict[str, Any]]) -> str:
-    if not executed:
-        return "没有可执行的补采步骤。"
-    parts = [f"执行 {len(executed)} 步", f"改善 {improvements} 项"]
+def finalize_retry_run(db: Session, trade_date: str, *, rebuild: bool = True) -> dict[str, Any]:
+    """Always close a retry run with materialization, quality, and report state.
+
+    The runner may execute zero steps or every step may fail. Even then the UI
+    needs a deterministic answer: did we have enough data for a real report, or
+    did we create a blocked/no-data report that explains why not?
+    """
+    before = build_coverage_matrix(db, trade_date, sync_gaps=False)
+    materialized = materialize_variety_dataset(db, trade_date)
+    after_materialize = build_coverage_matrix(db, trade_date, sync_gaps=True)
+    report_payload: dict[str, Any] | None = None
+    if rebuild:
+        report = build_report(db, trade_date)
+        report_payload = {"status": report.status, "score": report.score, "summary": report.summary}
+    after_report = build_coverage_matrix(db, trade_date, sync_gaps=False)
+    return {
+        "materialized": materialized,
+        "coverage_diff": diff_coverage_matrix(before, after_materialize),
+        "coverage_matrix": after_report,
+        "report": report_payload,
+        "status": "blocked" if report_payload and report_payload.get("status") == "blocked" else "success",
+    }
+
+
+def retry_job_status(executed: list[dict[str, Any]], failures: list[dict[str, Any]], finalization: dict[str, Any]) -> str:
+    if finalization.get("status") == "blocked":
+        return "partial" if executed else "failed"
+    if failures and not any(x.get("status") == "success" for x in executed):
+        return "failed"
     if failures:
-        parts.append(f"失败 {len(failures)} 步")
-    return "；".join(parts)
+        return "partial"
+    return "success"
+
+
+def runner_summary(executed: list[dict[str, Any]], improvements: int, failures: list[dict[str, Any]], finalization: dict[str, Any] | None = None) -> str:
+    finalization = finalization or {}
+    if not executed:
+        base = "没有可执行的补采步骤。"
+    else:
+        parts = [f"执行 {len(executed)} 步", f"改善 {improvements} 项"]
+        if failures:
+            parts.append(f"失败 {len(failures)} 步")
+        base = "；".join(parts)
+    report = finalization.get("report") or {}
+    if report.get("status") == "blocked":
+        return f"{base}；日报未生成有效结论：{report.get('summary') or '缺少可用行情数据'}"
+    if report:
+        return f"{base}；已重建日报：{report.get('summary') or '-'}"
+    return base

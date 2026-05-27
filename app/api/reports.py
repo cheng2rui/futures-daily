@@ -5,12 +5,12 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_db
-from app.models import JobRun, Report
+from app.models import CrawlerRun, DailyBar, DataGap, JobRun, Report, SourceFile
 from app.services.collector import collect_daily_market, collect_seat_ranks
 from app.services.coverage_diff import diff_coverage_matrix
 from app.services.coverage_matrix import build_coverage_matrix
@@ -47,7 +47,7 @@ def latest_report(db: Session = Depends(get_db)):
     report = db.scalar(select(Report).order_by(desc(Report.trade_date)).limit(1))
     if not report:
         return empty_report()
-    return ensure_report_payload(db, report)
+    return annotate_latest_state(db, ensure_report_payload(db, report), report)
 
 
 
@@ -297,6 +297,44 @@ def ensure_report_payload(db: Session, report: Report) -> dict:
         report = build_report(db, report.trade_date)
         payload = json.loads(report.report_json or "{}")
     return payload
+
+
+def annotate_latest_state(db: Session, payload: dict[str, Any], report: Report) -> dict[str, Any]:
+    """Make stale latest-report states explicit instead of silently showing an older day.
+
+    A failed collection day can create crawler runs/gaps/source files without a
+    report. The UI still asks for /reports/latest, so attach a small operational
+    state block whenever the latest pipeline activity is newer than the latest
+    report.
+    """
+    latest_activity = latest_pipeline_activity_date(db)
+    state = {
+        "status": "current",
+        "report_date": report.trade_date,
+        "latest_activity_date": latest_activity or report.trade_date,
+        "message": "当前展示的是最新已生成日报。",
+    }
+    if latest_activity and latest_activity > report.trade_date:
+        state = {
+            "status": "stale",
+            "report_date": report.trade_date,
+            "latest_activity_date": latest_activity,
+            "message": f"最新采集/诊断活动在 {latest_activity}，但尚未形成有效日报；当前仍展示 {report.trade_date}。",
+            "next_action": "先查看数据诊断或执行自动补采，再重新生成日报。",
+        }
+    payload.setdefault("meta", {})["latest_state"] = state
+    return payload
+
+
+def latest_pipeline_activity_date(db: Session) -> str | None:
+    candidates = [
+        db.scalar(select(func.max(DailyBar.trade_date))),
+        db.scalar(select(func.max(CrawlerRun.trade_date))),
+        db.scalar(select(func.max(DataGap.trade_date))),
+        db.scalar(select(func.max(SourceFile.trade_date))),
+    ]
+    values = [str(x) for x in candidates if x]
+    return max(values) if values else None
 
 
 def empty_report():
