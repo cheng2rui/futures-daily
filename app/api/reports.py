@@ -78,7 +78,7 @@ def get_report(trade_date: str, db: Session = Depends(get_db)):
     report = db.scalar(select(Report).where(Report.trade_date == trade_date))
     if not report:
         raise HTTPException(status_code=404, detail="report not found")
-    return ensure_report_payload(db, report)
+    return annotate_latest_state(db, ensure_report_payload(db, report), report)
 
 
 @router.post("/latest/push")

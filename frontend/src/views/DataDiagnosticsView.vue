@@ -14,6 +14,18 @@
     <div v-if="notice" class="notice success">{{ notice }}</div>
     <div v-if="error" class="notice error">{{ error }}</div>
 
+    <SectionCard v-if="currentState.status" title="当前日报状态" class="op-card">
+      <div class="op-summary">{{ currentState.message || '暂无 current-state 说明' }}</div>
+      <div class="replay-stats">
+        <span>状态 {{ currentState.status }}</span>
+        <span>Run {{ currentState.run_id || '-' }}</span>
+        <span>Profile {{ currentState.profile || '-' }}</span>
+        <span>核心覆盖 {{ ((currentState.counts?.core_coverage_pct_x10 || 0) / 10).toFixed(1) }}%</span>
+        <span>综合覆盖 {{ ((currentState.counts?.overall_coverage_pct_x10 || 0) / 10).toFixed(1) }}%</span>
+      </div>
+      <div class="op-tail">结束时间：{{ fmtTime(currentState.end_time) }}</div>
+    </SectionCard>
+
     <SectionCard v-if="operationResult" title="最近一次操作结果" class="op-card">
       <div class="op-summary">{{ operationResult.summary || '暂无总结' }}</div>
       <div class="replay-stats">
@@ -388,6 +400,7 @@ const sourceHealth = ref({ sources: [], summary: {} })
 const retryPlan = ref({ steps: [], skipped: [], summary: {} })
 const retryHistory = ref({ runs: [], summary: {} })
 const diagnosticData = ref({ exchanges: [] })
+const reportMeta = ref({})
 const archives = ref([])
 const archiveExchange = ref('')
 const archiveKind = ref('')
@@ -411,6 +424,7 @@ const retryPlanSteps = computed(() => retryPlan.value.steps || [])
 const retryPlanSkipped = computed(() => retryPlan.value.skipped || [])
 const retryRuns = computed(() => retryHistory.value.runs || [])
 const diagnostics = computed(() => diagnosticData.value.exchanges || [])
+const currentState = computed(() => reportMeta.value.current_state || {})
 const firstParserResult = computed(() => {
   const dry = replayResult.value?.parser_dry_run
   if (!dry) return null
@@ -447,16 +461,18 @@ async function load() {
     if (!date) throw new Error('暂无可诊断日期')
     tradeDate.value = date
     tradeDateInput.value = date
-    const [coverageResp, healthResp, planResp, diagResp] = await Promise.all([
+    const [coverageResp, healthResp, planResp, diagResp, reportResp] = await Promise.all([
       api.get(`/quality/coverage/${date}`),
       api.get(`/quality/source-health/${date}`),
       api.get(`/quality/retry-plan/${date}`),
       api.get(`/quality/diagnostics/${date}`),
+      api.get(`/reports/${date}`).catch(() => ({ data: { meta: {} } })),
     ])
     coverage.value = coverageResp.data || { rows: [], kinds: [], summary: {} }
     sourceHealth.value = healthResp.data || { sources: [], summary: {} }
     retryPlan.value = planResp.data || { steps: [], skipped: [], summary: {} }
     diagnosticData.value = diagResp.data || { exchanges: [] }
+    reportMeta.value = reportResp.data?.meta || {}
     await Promise.all([loadArchives(), loadRetryHistory()])
   } catch (e) {
     error.value = normalizeApiError(e, '加载失败')

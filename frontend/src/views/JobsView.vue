@@ -60,6 +60,11 @@
           <div v-if="expandedIds.includes(job.id)" class="job-detail">
             <div class="summary-line">{{ detail(job) }}</div>
             <div v-if="failureText(job)" class="failure-line">失败原因：{{ failureText(job) }}</div>
+            <div v-if="parsed(job)?.run_summary" class="run-summary-line" :class="`state-${parsed(job).run_summary.status}`">
+              <b>Current State: {{ parsed(job).run_summary.status }}</b>
+              <span>Run {{ parsed(job).run_summary.run_id }} · {{ parsed(job).run_summary.profile }}</span>
+              <small>核心 {{ pctFromX10(parsed(job).run_summary.counts?.core_coverage_pct_x10) }}｜综合 {{ pctFromX10(parsed(job).run_summary.counts?.overall_coverage_pct_x10) }}</small>
+            </div>
             <div v-if="parsed(job)?.collect" class="exchange-results">
               <div v-for="x in parsed(job).collect.results || []" :key="`c-${x.exchange}`" class="result-row" :class="x.error ? 'bad' : 'ok'">
                 <b>{{ x.exchange }}</b><span>行情 {{ x.saved ?? 0 }}/{{ x.rows ?? 0 }} 行</span><small>{{ x.error || '正常' }}</small>
@@ -139,6 +144,7 @@ function parsed(j) { try { return JSON.parse(j.result_json || '{}') } catch { re
 function detail(j) {
   const data = parsed(j)
   if (!data) return String(j.result_json || '-').slice(0, 80)
+  if (data.run_summary) return runSummaryText(data.run_summary, data.summary)
   if (data.summary) return data.summary
   if (data.dispatch) return data.dispatch.map(channelResult).join(' / ')
   if (j.name === 'retry_plan' && data.executed) return retryPlanDetail(data)
@@ -161,6 +167,11 @@ function recollectDetail(data) {
 function savedRows(result) { return (result?.results || []).reduce((sum, x) => sum + Number(x.saved || 0), 0) }
 function kindLabel(kind) { return ({ daily: '行情', seat_rank: '席位', basis: '基差', warehouse_receipt: '仓单' })[kind] || kind }
 function retryStepLabel(step) { return step?.type === 'collect_quhe' ? '增强源刷新' : `${step?.type || '-'} ${kindLabel(step?.kind)}` }
+function pctFromX10(v) { return v == null ? '-' : `${(Number(v || 0) / 10).toFixed(1)}%` }
+function runSummaryText(runSummary, fallback = '') {
+  const label = ({ complete: '完整 run', partial: '部分 run', error: '错误 run' })[runSummary.status] || runSummary.status || 'run'
+  return `${label}｜${runSummary.run_id || '-'}｜核心 ${pctFromX10(runSummary.counts?.core_coverage_pct_x10)}｜综合 ${pctFromX10(runSummary.counts?.overall_coverage_pct_x10)}${fallback ? `｜${fallback}` : ''}`
+}
 function retryPlanDetail(data) {
   const executed = data.executed || []
   const improved = executed.reduce((sum, x) => sum + Number(x.coverage_diff?.improved_cells || 0), 0)
@@ -230,6 +241,10 @@ onMounted(load)
 .job-detail { border-top:1px solid #eef2f7; background:#fbfdff; padding:13px 16px; display:grid; gap:10px; }
 .summary-line { color:#334155; font-weight:800; }
 .failure-line { color:#991b1b; background:#fff1f2; border:1px solid #fecdd3; border-radius:12px; padding:10px 12px; line-height:1.55; font-weight:800; }
+.run-summary-line { display:grid; grid-template-columns:180px 1fr 180px; gap:10px; align-items:center; padding:10px 12px; border-radius:12px; border:1px solid #dbeafe; background:#eff6ff; color:#1e3a8a; }
+.run-summary-line.state-complete { border-color:#bbf7d0; background:#f0fdf4; color:#166534; }
+.run-summary-line.state-partial { border-color:#fed7aa; background:#fff7ed; color:#9a3412; }
+.run-summary-line.state-error { border-color:#fecdd3; background:#fff1f2; color:#991b1b; }
 .exchange-results { display:grid; gap:7px; }
 .result-row { display:grid; grid-template-columns:90px 150px 1fr; gap:10px; align-items:center; padding:8px 10px; border-radius:10px; background:#fff; border:1px solid #eef2f7; }
 .result-row.ok { border-left:4px solid #16a34a; } .result-row.bad { border-left:4px solid #dc2626; } .result-row.skip { border-left:4px solid #94a3b8; }
