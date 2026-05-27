@@ -82,8 +82,18 @@
             </div>
             <div v-if="parsed(job)?.executed" class="exchange-results">
               <div v-for="(x, idx) in parsed(job).executed || []" :key="`r-${job.id}-${idx}`" class="result-row" :class="x.status === 'failed' ? 'bad' : 'ok'">
-                <b>{{ x.step?.exchange || '-' }}</b><span>{{ retryStepLabel(x.step) }}</span><small>{{ x.error || x.summary || x.coverage_diff?.summary || '-' }}</small>
+                <b>{{ x.step?.exchange || '-' }}</b><span>{{ retryStepLabel(x.step) }}</span><small>{{ x.error || archiveEffectSummary(x.result?.archive_effect) || x.summary || x.coverage_diff?.summary || '-' }}</small>
               </div>
+            </div>
+            <div v-if="archiveEffects(job).length" class="archive-effect-list">
+              <article v-for="effect in archiveEffects(job)" :key="`${job.id}-${effect.exchange}-${effect.source}`" class="archive-effect-card">
+                <b>{{ effect.summary }}</b>
+                <span>覆盖 {{ effect.coverage_pct }}%｜来源 {{ effect.source }}｜归档 {{ effect.rsstsx_varieties ?? 0 }} 个品种｜物化 {{ effect.with_archive_signal ?? 0 }}/{{ effect.varieties ?? 0 }}</span>
+                <div v-if="effect.top_net_delta_samples?.length || effect.focus5_samples?.length" class="mini-signal-list">
+                  <em v-for="item in effect.top_net_delta_samples || []" :key="`n-${item.symbol}-${item.netDelta}`">{{ item.symbol }} {{ fmtSigned(item.netDelta) }}</em>
+                  <em v-for="item in effect.focus5_samples || []" :key="`f-${item.symbol}-${item.focus5}`">{{ item.symbol }} Focus5 {{ item.focus5 }}</em>
+                </div>
+              </article>
             </div>
             <div v-if="parsed(job)?.dates" class="exchange-results">
               <div v-for="d in parsed(job).dates" :key="d" class="result-row ok">
@@ -176,8 +186,23 @@ function retryPlanDetail(data) {
   const executed = data.executed || []
   const improved = executed.reduce((sum, x) => sum + Number(x.coverage_diff?.improved_cells || 0), 0)
   const failed = executed.filter(x => x.status === 'failed').length
+  const archiveEffects = executed.map(x => x.result?.archive_effect).filter(Boolean)
+  const archiveText = archiveEffects.length ? `｜席位归档 ${archiveEffects.map(e => `${e.exchange || '-'} ${e.with_archive_signal ?? 0}/${e.varieties ?? 0}`).join('、')}` : ''
   const remaining = data.after_plan?.steps?.length ?? 0
-  return `执行 ${executed.length} 步｜改善 ${improved} 项｜失败 ${failed} 步｜剩余 ${remaining} 步`
+  return `执行 ${executed.length} 步｜改善 ${improved} 项｜失败 ${failed} 步｜剩余 ${remaining} 步${archiveText}`
+}
+function archiveEffects(job) {
+  const data = parsed(job)
+  return (data?.executed || []).map(x => x.result?.archive_effect).filter(Boolean)
+}
+function archiveEffectSummary(effect) {
+  if (!effect) return ''
+  return effect.summary || `席位归档物化 ${effect.with_archive_signal ?? 0}/${effect.varieties ?? 0}，覆盖 ${effect.coverage_pct ?? '-'}%`
+}
+function fmtSigned(v) {
+  const n = Number(v || 0)
+  if (!Number.isFinite(n)) return '-'
+  return n > 0 ? `+${n}` : `${n}`
 }
 function channelResult(x) {
   const name = channelLabel(x.channel)
@@ -246,6 +271,12 @@ onMounted(load)
 .run-summary-line.state-partial { border-color:#fed7aa; background:#fff7ed; color:#9a3412; }
 .run-summary-line.state-error { border-color:#fecdd3; background:#fff1f2; color:#991b1b; }
 .exchange-results { display:grid; gap:7px; }
+.archive-effect-list { display:grid; gap:8px; }
+.archive-effect-card { display:grid; gap:6px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; }
+.archive-effect-card b { color:#0f172a; }
+.archive-effect-card span { color:#64748b; font-size:13px; }
+.mini-signal-list { display:flex; flex-wrap:wrap; gap:6px; }
+.mini-signal-list em { font-style:normal; background:#eef2ff; color:#3157d5; border-radius:999px; padding:3px 8px; font-size:12px; font-weight:800; }
 .result-row { display:grid; grid-template-columns:90px 150px 1fr; gap:10px; align-items:center; padding:8px 10px; border-radius:10px; background:#fff; border:1px solid #eef2f7; }
 .result-row.ok { border-left:4px solid #16a34a; } .result-row.bad { border-left:4px solid #dc2626; } .result-row.skip { border-left:4px solid #94a3b8; }
 .result-row small { color:#64748b; word-break:break-all; }
