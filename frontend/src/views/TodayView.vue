@@ -18,6 +18,7 @@
     <div v-if="error" class="notice error">{{ error }}</div>
     <div v-else-if="notice" class="notice success">{{ notice }}</div>
     <div v-else-if="latestState.status === 'stale'" class="notice warning">{{ latestState.message }} {{ latestState.next_action || '' }}</div>
+    <div v-else-if="currentState.message" class="notice" :class="currentState.status === 'partial' ? 'warning' : ''">{{ currentState.message }}<span v-if="currentState.run_id"> Run: {{ currentState.run_id }}</span></div>
     <div v-else-if="sourceTip" class="notice">{{ sourceTip }}</div>
 
     <MetricGrid
@@ -475,7 +476,7 @@ let dashboardResizeTimer = null
 const draggingCardId = ref('')
 const expandedDashboardCards = ref([])
 const activeDashboardMode = ref(loadDashboardMode())
-const appVersion = ref('0.5.30')
+const appVersion = ref('0.5.31')
 const viewingDate = computed(() => route.query.date ? String(route.query.date) : '')
 const displayDate = computed(() => formatDate(report.value.date || viewingDate.value) || '暂无日期')
 const isEmptyReport = computed(() => !report.value.date && !report.value.overview?.summary)
@@ -516,6 +517,7 @@ const visibleDashboardCards = computed(() => modeDashboardCards.value.filter(car
 const dashboardMarket = computed(() => activeDashboardMode.value === 'intraday' ? intraday.value.market || {} : report.value.market || {})
 const reportVersion = computed(() => report.value.meta?.version || '')
 const latestState = computed(() => report.value.meta?.latest_state || {})
+const currentState = computed(() => report.value.meta?.current_state || {})
 const reportVersionWarning = computed(() => activeDashboardMode.value === 'review' && reportVersion.value && appVersion.value && reportVersion.value !== appVersion.value)
 const watchFocusRows = computed(() => (activeDashboardMode.value === 'intraday' ? intraday.value.watch_symbols || [] : report.value.watch_symbols || []).slice(0, 12))
 const watchRows = computed(() => rows(activeDashboardMode.value === 'intraday' ? intraday.value.watch_symbols : report.value.watch_symbols).slice(0, 14))

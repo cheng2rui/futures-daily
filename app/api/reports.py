@@ -20,6 +20,7 @@ from app.services.quhe_collector import collect_quhe_enhancements
 from app.services.notify import NotifyEvent, dispatch
 from app.services.push_digest import build_push_digest
 from app.services.report_builder import REPORT_SCHEMA_VERSION, build_report
+from app.services.run_records import complete_state_from_coverage, coverage_counts, run_summary
 from app.services.trading_day import normalize_trade_date
 
 from app.version import VERSION
@@ -114,9 +115,19 @@ def generate_report(trade_date: str | None = None, collect: bool = True, db: Ses
             quhe_result = collect_quhe_enhancements(db, trade_date)
             news_result = collect_news_digest(db, trade_date)
         report = build_report(db, trade_date)
-        job.status = "success"
+        coverage_matrix = build_coverage_matrix(db, trade_date, sync_gaps=False)
+        summary_record = run_summary(
+            run_id=f"generate_report:{job.id}",
+            trade_date=trade_date,
+            profile="generate_report",
+            status=complete_state_from_coverage(coverage_matrix, report.status),
+            counts=coverage_counts(coverage_matrix),
+            error=report.summary if report.status == "blocked" else "",
+            started_at=job.started_at,
+        )
+        job.status = "partial" if report.status == "blocked" else "success"
         job.message = report.summary
-        job.result_json = json.dumps({"collect": collect_result, "seats": seat_result, "quhe": quhe_result, "news": news_result}, ensure_ascii=False, default=str)
+        job.result_json = json.dumps({"collect": collect_result, "seats": seat_result, "quhe": quhe_result, "news": news_result, "run_summary": summary_record}, ensure_ascii=False, default=str)
         job.finished_at = datetime.utcnow()
         db.commit()
     except Exception as exc:
@@ -323,7 +334,41 @@ def annotate_latest_state(db: Session, payload: dict[str, Any], report: Report) 
             "next_action": "先查看数据诊断或执行自动补采，再重新生成日报。",
         }
     payload.setdefault("meta", {})["latest_state"] = state
+    current_state = latest_complete_run_state(db, report.trade_date, payload)
+    if current_state:
+        payload["meta"]["current_state"] = current_state
     return payload
+
+
+def latest_complete_run_state(db: Session, trade_date: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    rows = db.scalars(
+        select(JobRun)
+        .where(JobRun.trade_date == trade_date)
+        .order_by(desc(JobRun.started_at))
+        .limit(20)
+    ).all()
+    for row in rows:
+        data = parse_json(row.result_json)
+        run_summary = data.get("run_summary") if isinstance(data.get("run_summary"), dict) else None
+        if not run_summary:
+            continue
+        status = str(run_summary.get("status") or "")
+        if status not in {"complete", "partial", "error"}:
+            continue
+        return {
+            "status": status,
+            "run_id": run_summary.get("run_id") or row.id,
+            "profile": run_summary.get("profile") or row.name,
+            "trade_date": trade_date,
+            "message": {
+                "complete": "当前日报由完整 run 提升而来。",
+                "partial": "当前日报来自部分完成的 run，仍需留意缺口。",
+                "error": "当前日报尚未形成可用 current-state。",
+            }.get(status, ""),
+            "counts": run_summary.get("counts") or {},
+            "end_time": run_summary.get("end_time") or (row.finished_at.isoformat() if row.finished_at else None),
+        }
+    return None
 
 
 def latest_pipeline_activity_date(db: Session) -> str | None:
@@ -335,6 +380,14 @@ def latest_pipeline_activity_date(db: Session) -> str | None:
     ]
     values = [str(x) for x in candidates if x]
     return max(values) if values else None
+
+
+def parse_json(raw: str) -> dict[str, Any]:
+    try:
+        data = json.loads(raw or "{}")
+        return data if isinstance(data, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def empty_report():

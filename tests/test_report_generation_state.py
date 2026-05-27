@@ -12,7 +12,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app.api.reports import annotate_latest_state, ensure_report_payload
 from app.db import Base
-from app.models import CrawlerRun, Report
+from app.models import CrawlerRun, JobRun, Report
+from app.services.run_records import run_summary
 from app.services.report_builder import build_report
 
 
@@ -46,11 +47,16 @@ def check() -> None:
         )
         db.add(old_report)
         db.add(CrawlerRun(trade_date="20260527", exchange="DCE", kind="daily", source="akshare", status="failed", error="network timeout"))
+        db.add(JobRun(name="generate_report", status="success", trade_date="20260525", result_json=json.dumps({
+            "run_summary": run_summary(run_id="generate_report:1", trade_date="20260525", profile="generate_report", status="partial", counts={"core_coverage_pct_x10": 800})
+        }, ensure_ascii=False)))
         db.commit()
 
         stale_payload = annotate_latest_state(db, ensure_report_payload(db, old_report), old_report)
         assert stale_payload["meta"]["latest_state"]["status"] == "stale"
         assert stale_payload["meta"]["latest_state"]["latest_activity_date"] == "20260527"
+        assert stale_payload["meta"]["current_state"]["status"] == "partial"
+        assert stale_payload["meta"]["current_state"]["run_id"] == "generate_report:1"
     finally:
         db.close()
 

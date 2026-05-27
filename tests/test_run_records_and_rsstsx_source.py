@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.services.run_records import run_summary, source_record_id, stable_record_id
+from app.services.run_records import complete_state_from_coverage, coverage_counts, run_summary, source_record_id, stable_record_id
 from app.sources.rsstsx_archive_source import RsstsxArchiveSource, to_provider_row
 
 
@@ -14,6 +14,11 @@ def check() -> None:
     summary = run_summary(run_id="r1", trade_date="20260526", profile="browser_probe", status="complete", counts={"source_record": 1})
     assert summary["record_type"] == "run_summary"
     assert summary["record_id"].startswith("run_summary:")
+    matrix = {"summary": {"status": "ok", "exchanges": 6, "ok_exchanges": 6, "core_coverage_pct": 100, "overall_coverage_pct": 80}, "rows": []}
+    assert complete_state_from_coverage(matrix, "generated") == "complete"
+    assert coverage_counts(matrix)["core_coverage_pct_x10"] == 1000
+    assert complete_state_from_coverage({"summary": {"status": "partial", "core_coverage_pct": 50}}, "generated") == "partial"
+    assert complete_state_from_coverage(matrix, "blocked") == "error"
 
     src = RsstsxArchiveSource()
     caps = src.capabilities()

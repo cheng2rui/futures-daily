@@ -12,6 +12,7 @@ from app.services.coverage_diff import diff_coverage_matrix
 from app.services.coverage_matrix import build_coverage_matrix
 from app.services.data_mart import materialize_variety_dataset
 from app.services.quhe_collector import collect_quhe_enhancements
+from app.services.run_records import complete_state_from_coverage, coverage_counts, run_summary
 from app.services.report_builder import build_report
 from app.services.retry_planner import build_retry_plan
 
@@ -43,7 +44,7 @@ def run_retry_plan(db: Session, trade_date: str, *, max_steps: int = 3, stop_on_
             if stop_on_failure and result.get("status") == "failed":
                 break
 
-        finalization = finalize_retry_run(db, trade_date, rebuild=rebuild)
+        finalization = finalize_retry_run(db, trade_date, rebuild=rebuild, run_id=f"retry_plan:{job.id}")
         after_plan = build_retry_plan(db, trade_date)
         failures = [x for x in executed if x.get("status") == "failed"]
         improvements = sum(int((x.get("coverage_diff") or {}).get("improved_cells") or 0) for x in executed)
@@ -117,7 +118,7 @@ def run_retry_step(db: Session, trade_date: str, step: dict[str, Any], *, rebuil
     }
 
 
-def finalize_retry_run(db: Session, trade_date: str, *, rebuild: bool = True) -> dict[str, Any]:
+def finalize_retry_run(db: Session, trade_date: str, *, rebuild: bool = True, run_id: str = "retry_plan") -> dict[str, Any]:
     """Always close a retry run with materialization, quality, and report state.
 
     The runner may execute zero steps or every step may fail. Even then the UI
@@ -132,12 +133,22 @@ def finalize_retry_run(db: Session, trade_date: str, *, rebuild: bool = True) ->
         report = build_report(db, trade_date)
         report_payload = {"status": report.status, "score": report.score, "summary": report.summary}
     after_report = build_coverage_matrix(db, trade_date, sync_gaps=False)
+    state_status = complete_state_from_coverage(after_report, str((report_payload or {}).get("status") or ""))
+    summary = run_summary(
+        run_id=run_id,
+        trade_date=trade_date,
+        profile="retry_plan",
+        status=state_status,
+        counts=coverage_counts(after_report),
+        error=str((report_payload or {}).get("summary") or "") if state_status == "error" else "",
+    )
     return {
         "materialized": materialized,
         "coverage_diff": diff_coverage_matrix(before, after_materialize),
         "coverage_matrix": after_report,
         "report": report_payload,
-        "status": "blocked" if report_payload and report_payload.get("status") == "blocked" else "success",
+        "run_summary": summary,
+        "status": "blocked" if state_status == "error" else "success",
     }
 
 
