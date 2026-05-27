@@ -14,6 +14,7 @@ from app.services.quhe_collector import collect_quhe_enhancements
 from app.services.raw_archive import list_archives, read_archive, source_file_item
 from app.services.raw_replay import replay_source_file
 from app.services.parser_promotion_preview import build_promotion_preview
+from app.services.parser_promotion_apply import apply_promotion_preview
 from app.services.browser.official_probe import probe_official_page, official_probe_url
 from app.services.trading_day import normalize_trade_date
 
@@ -120,6 +121,14 @@ def promotion_preview_raw_archive(file_id: int, sample_limit: int = 50, db: Sess
     if not row:
         return {"error": "not_found"}
     return build_promotion_preview(row, sample_limit=sample_limit)
+
+
+@router.post("/raw-archives/{file_id}/promotion-apply")
+def promotion_apply_raw_archive(file_id: int, confirm: str | None = None, sample_limit: int = 500, db: Session = Depends(get_db)):
+    row = db.scalar(select(SourceFile).where(SourceFile.id == file_id))
+    if not row:
+        return {"error": "not_found"}
+    return apply_promotion_preview(db, row, confirm=confirm, sample_limit=sample_limit)
 
 
 @router.post("/browser-probe/{trade_date}/{exchange}")

@@ -328,6 +328,13 @@
           <span>会写库 {{ promotionPreview.would_write ? 'YES' : 'NO' }}</span>
           <span>Guard {{ promotionPreview.promotion_guard?.allowed ? 'PASS' : 'BLOCKED' }}</span>
         </div>
+        <div v-if="promotionPreview.status === 'ready'" class="promotion-actions">
+          <button class="danger" :disabled="replaying === promotionPreview.file?.id" @click="applyPromotion(promotionPreview.file)">确认入库</button>
+          <span>需要 Guard PASS；入库按精确行去重，不会清空已有席位数据。</span>
+        </div>
+        <div v-if="promotionPreview.inserted !== undefined" class="guard-reasons">
+          <span>已插入 {{ promotionPreview.inserted || 0 }} 行，跳过重复 {{ promotionPreview.skipped || 0 }} 行</span>
+        </div>
         <div v-if="promotionPreview.promotion_guard?.reasons?.length" class="guard-reasons">
           <span v-for="reason in promotionPreview.promotion_guard.reasons" :key="reason.code">{{ reason.message }}</span>
         </div>
@@ -518,6 +525,28 @@ async function loadPromotionPreview(row) {
     }
   } catch (e) {
     error.value = normalizeApiError(e, 'Promotion Preview 失败')
+  } finally {
+    replaying.value = null
+  }
+}
+
+async function applyPromotion(file) {
+  if (!file?.id) return
+  const token = `PROMOTE-${file.id}`
+  if (!confirmDanger(`确认将 Raw Archive #${file.id} 的 Promotion Preview 写入 seat_rank_rows？\n\n确认令牌：${token}\n\n该操作会按精确席位行去重，不会清空已有席位数据。`)) return
+  replaying.value = file.id
+  try {
+    const { data } = await api.post(`/dataset/raw-archives/${file.id}/promotion-apply`, null, { params: { confirm: token } })
+    promotionPreview.value = data
+    operationResult.value = {
+      summary: `Promotion Apply #${file.id}：插入 ${data.inserted || 0} 行，跳过 ${data.skipped || 0} 行`,
+      message: data.message,
+      note: data.status === 'applied' ? '已受控写入 seat_rank_rows，并记录 crawler run / data gap。' : '没有新增写入。',
+      coverage_diff: {},
+    }
+    await Promise.all([loadArchives(), load()])
+  } catch (e) {
+    error.value = normalizeApiError(e, 'Promotion Apply 失败')
   } finally {
     replaying.value = null
   }
@@ -791,6 +820,9 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .preview-table table { min-width:980px; }
 .preview-table .mono { font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color:#3157d5; font-size:12px; }
 .promotion-preview details summary { cursor:pointer; color:#334155; font-weight:900; }
+.promotion-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:#64748b; font-size:12px; font-weight:800; }
+.promotion-actions .danger { border:0; border-radius:10px; padding:8px 12px; background:#e94560; color:#fff; font-weight:900; cursor:pointer; }
+.promotion-actions .danger:disabled { opacity:.55; cursor:not-allowed; }
 .promotion-guard { padding:11px; border-radius:12px; display:grid; gap:8px; }
 .promotion-guard.pass { border:1px solid #bbf7d0; background:#f0fdf4; }
 .promotion-guard.blocked { border:1px solid #fed7aa; background:#fff7ed; }
