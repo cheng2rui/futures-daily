@@ -105,7 +105,8 @@ def run_retry_step(db: Session, trade_date: str, step: dict[str, Any], *, rebuil
             if signals.get("status") != "ok":
                 raise ValueError(signals.get("reason") or "rsstsx archive unavailable")
             materialized = materialize_variety_dataset(db, trade_date)
-            payload = {"signals": {"status": signals.get("status"), "count": signals.get("count"), "source": signals.get("source")}, "materialized": materialized}
+            archive_effect = archive_materialization_effect(signals, materialized, step.get("exchange"))
+            payload = {"signals": {"status": signals.get("status"), "count": signals.get("count"), "source": signals.get("source")}, "materialized": materialized, "archive_effect": archive_effect}
             if rebuild:
                 report = build_report(db, trade_date)
                 payload["report"] = {"score": report.score, "summary": report.summary}
@@ -125,6 +126,28 @@ def run_retry_step(db: Session, trade_date: str, step: dict[str, Any], *, rebuil
         "coverage_diff": coverage_diff,
         "result": payload,
         "summary": coverage_diff.get("summary") or ("执行失败" if status == "failed" else "执行完成"),
+    }
+
+
+def archive_materialization_effect(signals: dict[str, Any], materialized: dict[str, Any], exchange: str | None = None) -> dict[str, Any]:
+    summary = materialized.get("summary") if isinstance(materialized.get("summary"), dict) else {}
+    rows = summary.get("exchanges") if isinstance(summary.get("exchanges"), list) else []
+    target = str(exchange or "").upper()
+    exchange_rows = [x for x in rows if not target or str(x.get("exchange") or "").upper() == target]
+    with_archive = sum(int(x.get("with_archive_signal") or 0) for x in exchange_rows)
+    varieties = sum(int(x.get("varieties") or 0) for x in exchange_rows)
+    top = (signals.get("net_delta_top") or [])[:5]
+    focus = ((signals.get("focus5") or {}).get("combined_by_variety") or [])[:5]
+    return {
+        "source": signals.get("source") or "rsstsx_archive",
+        "archive_count": int(signals.get("count") or 0),
+        "exchange": target or "ALL",
+        "varieties": varieties,
+        "with_archive_signal": with_archive,
+        "coverage_pct": round(with_archive / varieties * 100, 1) if varieties else 0,
+        "top_net_delta": [{"name": x.get("displayName") or x.get("name"), "exchange": x.get("exchange"), "netDelta": x.get("netDelta"), "netDir": x.get("netDir")} for x in top],
+        "focus5": [{"variety": x.get("variety"), "exchange": x.get("exchange"), "netDelta": x.get("netDelta"), "netVol": x.get("netVol")} for x in focus],
+        "summary": f"rsstsx 归档 {int(signals.get('count') or 0)} 个品种；{target or '全市场'} 物化结构信号 {with_archive}/{varieties}。",
     }
 
 

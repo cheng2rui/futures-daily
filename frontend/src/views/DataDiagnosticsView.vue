@@ -35,6 +35,15 @@
         <span>回退 {{ operationResult.coverage_diff?.regressed_cells ?? 0 }}</span>
       </div>
       <div class="op-tail">{{ operationResult.note || operationResult.message || '-' }}</div>
+      <div v-if="operationResult.archive_effects?.length" class="archive-effect-list">
+        <article v-for="effect in operationResult.archive_effects" :key="`${effect.exchange}-${effect.source}`" class="archive-effect-card">
+          <b>{{ effect.summary }}</b>
+          <span>覆盖 {{ effect.coverage_pct }}%｜来源 {{ effect.source }}</span>
+          <div v-if="effect.top_net_delta?.length" class="mini-signal-list">
+            <em v-for="item in effect.top_net_delta.slice(0, 5)" :key="`${effect.exchange}-${item.name}`">{{ item.name }} {{ fmtSigned(item.netDelta) }}</em>
+          </div>
+        </article>
+      </div>
       <div v-if="operationResult.coverage_diff?.changes?.length" class="change-list compact">
         <div v-for="change in operationResult.coverage_diff.changes.slice(0, 8)" :key="`op-${change.exchange}-${change.kind}`" class="change-row" :class="changeClass(change.direction)">
           <b>{{ exchangeName(change.exchange) }} · {{ kindLabel(change.kind) }}</b>
@@ -162,6 +171,10 @@
               <div v-for="step in run.executed" :key="`${run.id}-${step.type}-${step.exchange}-${step.kind}-${step.priority}`" class="run-step" :class="step.status === 'failed' ? 'bad' : 'ok'">
                 <b>{{ step.type }} · {{ exchangeName(step.exchange) }} · {{ kindLabel(step.kind) }}</b>
                 <span>{{ step.summary || step.error || '-' }}</span>
+                <div v-if="step.archive_effect" class="archive-effect-card compact-effect">
+                  <b>{{ step.archive_effect.summary }}</b>
+                  <span>覆盖 {{ step.archive_effect.coverage_pct }}%｜来源 {{ step.archive_effect.source }}</span>
+                </div>
                 <div v-if="step.changes?.length" class="change-list">
                   <div v-for="change in step.changes.slice(0, 4)" :key="`${run.id}-${step.type}-${change.exchange}-${change.kind}`" class="change-row" :class="changeClass(change.direction)">
                     <b>{{ exchangeName(change.exchange) }} · {{ kindLabel(change.kind) }}</b>
@@ -593,6 +606,7 @@ async function runRetryPlan() {
       summary: data?.summary || `执行 ${(data?.executed || []).length} 步，改善 ${improved} 项`,
       message: `执行 ${(data?.executed || []).length} 步，失败 ${failed} 步`,
       note: `job #${data?.job_id || '-'} · ${data?.job_status || '-'}`,
+      archive_effects: archiveEffects(data?.executed || []),
       coverage_diff: aggregateRunnerDiff(data?.executed || []),
     }
     await load()
@@ -601,6 +615,10 @@ async function runRetryPlan() {
   } finally {
     loadingPlan.value = false
   }
+}
+
+function archiveEffects(items) {
+  return (items || []).map(item => item.result?.archive_effect).filter(Boolean)
 }
 
 function aggregateRunnerDiff(items) {
@@ -636,6 +654,32 @@ async function runRetryStep(step) {
   if (!step) return
   if (step.type === 'recollect') return runRecollectInternal(step.exchange, step.kind)
   if (step.type === 'collect_quhe') return runCollectQuhe(step)
+  if (step.type === 'materialize_archive_signal') return runMaterializeArchiveSignal(step)
+}
+
+async function runMaterializeArchiveSignal(step) {
+  if (!tradeDate.value) return
+  if (!confirmDanger(`确认从本地 rsstsx 结构化归档物化 ${tradeDate.value} 的${kindLabel(step.kind)}？`)) return
+  loadingPlan.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    const { data } = await api.post(`/quality/retry-plan/${tradeDate.value}/run`, null, { params: { max_steps: step.order || 1, stop_on_failure: false, rebuild: true } })
+    const effects = archiveEffects(data?.executed || [])
+    notice.value = effects[0]?.summary || '席位归档物化完成'
+    operationResult.value = {
+      summary: data?.summary || '席位归档物化完成',
+      message: step?.reason || '',
+      note: `job #${data?.job_id || '-'} · ${data?.job_status || '-'}`,
+      archive_effects: effects,
+      coverage_diff: aggregateRunnerDiff(data?.executed || []),
+    }
+    await load()
+  } catch (e) {
+    error.value = normalizeApiError(e, '席位归档物化失败')
+  } finally {
+    loadingPlan.value = false
+  }
 }
 
 async function runBrowserProbe(step) {
@@ -811,6 +855,13 @@ td { padding:11px 12px; border-bottom:1px solid #f1f5f9; white-space:nowrap; }
 .run-step { display:grid; gap:6px; padding:8px 10px; border-radius:10px; background:#fbfdff; border:1px solid #eef2f7; }
 .run-step.ok { border-left:4px solid #16a34a; } .run-step.bad { border-left:4px solid #dc2626; }
 .run-step span { color:#64748b; font-size:12px; line-height:1.45; word-break:break-word; }
+.archive-effect-list { display:grid; gap:8px; margin:10px 0; }
+.archive-effect-card { display:grid; gap:6px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; }
+.archive-effect-card.compact-effect { margin-top:8px; padding:8px 10px; }
+.archive-effect-card b { color:#0f172a; }
+.archive-effect-card span { color:#64748b; font-size:13px; }
+.mini-signal-list { display:flex; flex-wrap:wrap; gap:6px; }
+.mini-signal-list em { font-style:normal; background:#eef2ff; color:#3157d5; border-radius:999px; padding:3px 8px; font-size:12px; font-weight:800; }
 .change-list { display:grid; gap:6px; margin-top:4px; }
 .change-list.compact { margin-top:2px; }
 .change-row { display:grid; grid-template-columns:minmax(120px, 1fr) minmax(150px, 1.5fr) auto; gap:8px; align-items:center; padding:7px 9px; border-radius:10px; border:1px solid #e2e8f0; background:#f8fafc; font-size:12px; }

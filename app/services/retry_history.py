@@ -81,6 +81,7 @@ def serialize_retry_step(step_result: dict[str, Any]) -> dict[str, Any]:
         "improved_cells": int(diff.get("improved_cells") or 0),
         "regressed_cells": int(diff.get("regressed_cells") or 0),
         "changes": serialize_cell_changes(diff.get("changes") if isinstance(diff.get("changes"), list) else []),
+        "archive_effect": ((step_result.get("result") or {}).get("archive_effect") if isinstance(step_result.get("result"), dict) else None),
         "started_at": step_result.get("started_at"),
         "finished_at": step_result.get("finished_at"),
     }
